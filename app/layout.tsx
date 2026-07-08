@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
+import NavAccountStatus from "@/components/nav-account-status";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -27,7 +29,15 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <nav style={{ padding: "12px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", gap: 24, alignItems: "center" }}>
+          <Link href="/" style={{ color: "#000", textDecoration: "none" }}>Home</Link>
+          <Link href="/connect" style={{ color: "#000", textDecoration: "none" }}>Connect</Link>
+          <Link href="/post" style={{ color: "#000", textDecoration: "none" }}>Post</Link>
+          <NavAccountStatus />
+        </nav>
+        {children}
+      </body>
     </html>
   );
 }

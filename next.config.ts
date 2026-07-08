@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  allowedDevOrigins: [
+    "rectal-regroup-ascend.ngrok-free.dev",
+  ],
 };
 
 export default nextConfig;
