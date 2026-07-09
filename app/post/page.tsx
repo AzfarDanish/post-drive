@@ -28,16 +28,20 @@ interface OgData {
   siteName: string | null;
 }
 
-const CHAR_LIMIT = 500;
+const SLIDER_MIN = 30;
+const SLIDER_MAX = 500;
 
-function charBarColor(ratio: number) {
+function charBarColor(count: number, min: number, max: number) {
+  if (count < min) return "bg-red-500";
+  if (count > max) return "bg-red-500";
+  const ratio = count / max;
   return ratio > 0.95
     ? "bg-red-500"
     : ratio > 0.85
       ? "bg-orange-500"
       : ratio > 0.7
         ? "bg-yellow-500"
-        : "bg-gray-400";
+        : "bg-green-500";
 }
 
 function extractFirstUrl(text: string): string | null {
@@ -52,6 +56,10 @@ export default function PostPage() {
   const [businessDescription, setBusinessDescription] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [tone, setTone] = useState<Tone>("rage-bait");
+  const [charMin, setCharMin] = useState(240);
+  const [charMax, setCharMax] = useState(480);
+  const [prefsStatus, setPrefsStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   const [aiStatus, setAiStatus] = useState<"idle" | "generating" | "done" | "error">("idle");
   const [aiError, setAiError] = useState("");
@@ -82,9 +90,18 @@ export default function PostPage() {
     setMedia((prev) => prev.filter((_, i) => i !== index));
   }
 
+  function autoResize(el: HTMLTextAreaElement) {
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + 24 + "px";
+  }
+
   const allPostsValid =
     posts.length > 0 &&
-    posts.every((p) => p.trim().length > 0 && p.length <= CHAR_LIMIT);
+    charMin < charMax &&
+    posts.every((p) => {
+      const len = p.trim().length;
+      return len >= charMin && len <= charMax;
+    });
 
   useEffect(() => {
     const timers = posts.map((text, i) =>
@@ -139,6 +156,59 @@ export default function PostPage() {
       timers.forEach((t) => clearTimeout(t));
     };
   }, [posts]);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      document.querySelectorAll<HTMLTextAreaElement>(".post-textarea").forEach(autoResize);
+    });
+  }, [posts]);
+
+  useEffect(() => {
+    async function loadPrefs() {
+      try {
+        const res = await fetch("/api/preferences");
+        if (res.ok) {
+          const data = await res.json();
+          setBusinessDescription(data.business_description || "");
+          setWebsiteUrl(data.website_url || "");
+          if (data.default_tone) setTone(data.default_tone as Tone);
+          if (data.char_min && data.char_max) {
+            setCharMin(data.char_min);
+            setCharMax(data.char_max);
+          }
+        }
+      } catch {
+        // silently fail - form stays at defaults
+      } finally {
+        setPrefsStatus("loaded");
+      }
+    }
+    loadPrefs();
+  }, []);
+
+  async function handleSavePrefs() {
+    setSaveStatus("saving");
+    try {
+      const res = await fetch("/api/preferences", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          default_tone: tone,
+          business_description: businessDescription.trim(),
+          website_url: websiteUrl.trim(),
+          char_min: charMin,
+          char_max: charMax,
+        }),
+      });
+      if (res.ok) {
+        setSaveStatus("saved");
+      } else {
+        setSaveStatus("error");
+      }
+    } catch {
+      setSaveStatus("error");
+    }
+  }
 
   async function handleFileSelect(index: number, file: File | null) {
     if (!file) return;
@@ -229,6 +299,8 @@ export default function PostPage() {
           businessDescription: businessDescription.trim(),
           websiteUrl: websiteUrl.trim() || undefined,
           tone,
+          charMin,
+          charMax,
         }),
       });
 
@@ -376,23 +448,67 @@ export default function PostPage() {
             </div>
           </div>
 
-          <button
-            onClick={handleGenerateAi}
-            disabled={aiStatus === "generating" || !businessDescription.trim()}
-            className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors w-full"
-          >
-            {aiStatus === "generating" ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                </svg>
-                Generating...
-              </span>
-            ) : (
-              "Generate with AI"
-            )}
-          </button>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Min characters: {charMin}</label>
+              <input
+                type="range"
+                min={SLIDER_MIN}
+                max={charMax - 10}
+                step={10}
+                value={charMin}
+                onChange={(e) => setCharMin(Number(e.target.value))}
+                disabled={aiStatus === "generating"}
+                className="w-full accent-indigo-600"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Max characters: {charMax}</label>
+              <input
+                type="range"
+                min={charMin + 10}
+                max={SLIDER_MAX}
+                step={10}
+                value={charMax}
+                onChange={(e) => setCharMax(Number(e.target.value))}
+                disabled={aiStatus === "generating"}
+                className="w-full accent-indigo-600"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSavePrefs}
+              disabled={saveStatus === "saving" || prefsStatus === "loading"}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-1"
+            >
+              {saveStatus === "saving"
+                ? "Saving..."
+                : saveStatus === "saved"
+                  ? "Saved!"
+                  : "Save as Defaults"}
+            </button>
+
+            <button
+              onClick={handleGenerateAi}
+              disabled={aiStatus === "generating" || !businessDescription.trim()}
+              className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex-1"
+            >
+              {aiStatus === "generating" ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                  Generating...
+                </span>
+              ) : (
+                "Generate with AI"
+              )}
+            </button>
+          </div>
 
           {aiStatus === "done" && (
             <button
@@ -434,7 +550,7 @@ export default function PostPage() {
           {posts.length > 0 && (() => {
             const post = posts[0];
             const count = post.length;
-            const ratio = count / CHAR_LIMIT;
+            const ratio = count / charMax;
             const og = ogData[0];
             const loadingOg = ogLoading[0];
 
@@ -494,10 +610,11 @@ export default function PostPage() {
                 <textarea
                   value={post}
                   onChange={(e) => updatePost(0, e.target.value)}
+                  onInput={(e) => autoResize(e.currentTarget)}
                   placeholder="Post..."
                   rows={3}
                   disabled={publishStatus === "publishing"}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
+                  className="post-textarea w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100"
                 />
 
                 {loadingOg && <div className="text-xs text-gray-400 animate-pulse">Loading preview...</div>}
@@ -522,10 +639,10 @@ export default function PostPage() {
                 <div className="space-y-1">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-gray-400">Characters</span>
-                    <span className={count > CHAR_LIMIT ? "text-red-600 font-medium" : "text-gray-500"}>{count} / {CHAR_LIMIT}</span>
+                    <span className={count < charMin || count > charMax ? "text-red-600 font-medium" : "text-gray-500"}>{count} (min {charMin} / max {charMax})</span>
                   </div>
                   <div className="h-1 w-full rounded-full bg-gray-200 overflow-hidden">
-                    <div className={`h-full rounded-full transition-all duration-200 ${charBarColor(ratio)}`} style={{ width: `${Math.min(ratio * 100, 100)}%` }} />
+                    <div className={`h-full rounded-full transition-all duration-200 ${charBarColor(count, charMin, charMax)}`} style={{ width: `${Math.min(ratio * 100, 100)}%` }} />
                   </div>
                 </div>
               </div>
@@ -537,7 +654,7 @@ export default function PostPage() {
               {posts.slice(1).map((post, idx) => {
                 const i = idx + 1;
                 const count = post.length;
-                const ratio = count / CHAR_LIMIT;
+                const ratio = count / charMax;
                 const og = ogData[i];
                 const loadingOg = ogLoading[i];
 
@@ -605,10 +722,11 @@ export default function PostPage() {
                     <textarea
                       value={post}
                       onChange={(e) => updatePost(i, e.target.value)}
+                      onInput={(e) => autoResize(e.currentTarget)}
                       placeholder={`Reply ${idx + 1}...`}
                       rows={3}
                       disabled={publishStatus === "publishing"}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
+                      className="post-textarea w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100"
                     />
 
                     {loadingOg && <div className="text-xs text-gray-400 animate-pulse">Loading preview...</div>}
@@ -633,10 +751,10 @@ export default function PostPage() {
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-gray-400">Characters</span>
-                        <span className={count > CHAR_LIMIT ? "text-red-600 font-medium" : "text-gray-500"}>{count} / {CHAR_LIMIT}</span>
+                        <span className={count < charMin || count > charMax ? "text-red-600 font-medium" : "text-gray-500"}>{count} (min {charMin} / max {charMax})</span>
                       </div>
                       <div className="h-1 w-full rounded-full bg-gray-200 overflow-hidden">
-                        <div className={`h-full rounded-full transition-all duration-200 ${charBarColor(ratio)}`} style={{ width: `${Math.min(ratio * 100, 100)}%` }} />
+                        <div className={`h-full rounded-full transition-all duration-200 ${charBarColor(count, charMin, charMax)}`} style={{ width: `${Math.min(ratio * 100, 100)}%` }} />
                       </div>
                     </div>
                   </div>
