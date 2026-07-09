@@ -31,6 +31,9 @@ export async function GET() {
       website_url: "",
       char_min: 240,
       char_max: 480,
+      target_audience: "",
+      main_problem: "",
+      key_features: "",
     };
     return NextResponse.json(defaultPrefs);
   }
@@ -41,6 +44,9 @@ export async function GET() {
     website_url: prefs.website_url,
     char_min: prefs.char_min,
     char_max: prefs.char_max,
+    target_audience: prefs.target_audience,
+    main_problem: prefs.main_problem,
+    key_features: prefs.key_features,
   });
 }
 
@@ -79,6 +85,12 @@ export async function PUT(req: NextRequest) {
     typeof body.char_max === "number" && body.char_max <= 500 && body.char_max > (typeof body.char_min === "number" ? body.char_min : 240)
       ? body.char_max
       : 480;
+  const target_audience =
+    typeof body.target_audience === "string" ? body.target_audience : "";
+  const main_problem =
+    typeof body.main_problem === "string" ? body.main_problem : "";
+  const key_features =
+    typeof body.key_features === "string" ? body.key_features : "";
 
   const { data: prefs, error: upsertError } = await supabase
     .from("user_preferences")
@@ -90,6 +102,9 @@ export async function PUT(req: NextRequest) {
         website_url,
         char_min,
         char_max,
+        target_audience,
+        main_problem,
+        key_features,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "threads_account_id", ignoreDuplicates: false }
@@ -110,5 +125,8 @@ export async function PUT(req: NextRequest) {
     website_url: prefs!.website_url,
     char_min: prefs!.char_min,
     char_max: prefs!.char_max,
+    target_audience: prefs!.target_audience,
+    main_problem: prefs!.main_problem,
+    key_features: prefs!.key_features,
   });
 }

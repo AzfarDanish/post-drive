@@ -83,18 +83,30 @@ export async function generatePost(
   websiteUrl?: string,
   tone: Tone = "rage-bait",
   charMin: number = 240,
-  charMax: number = 480
+  charMax: number = 480,
+  targetAudience?: string,
+  mainProblem?: string,
+  keyFeatures?: string
 ): Promise<string[]> {
   let context = `Business description: ${businessDescription}`;
 
   if (websiteUrl) {
     context += `\n\nWebsite URL: ${websiteUrl}`;
   }
+  if (targetAudience) {
+    context += `\n\nTarget audience: ${targetAudience}`;
+  }
+  if (mainProblem) {
+    context += `\n\nMain problem they solve: ${mainProblem}`;
+  }
+  if (keyFeatures) {
+    context += `\n\nKey features: ${keyFeatures}`;
+  }
 
   const openai = getOpenAI();
 
   let system = systemPrompts[tone];
-  system += `\n\n- Each post between ${charMin} and ${charMax} characters.`;
+  system += `\n\n- Each post must be between ${charMin} and ${charMax} characters. This is a hard limit, not a target. If you are approaching ${charMax} characters, end the post there and continue the idea in the next post instead of cramming it in.`;
 
   const { text: generated } = await generateText({
     model: openai("gpt-4o-mini"),
@@ -107,8 +119,104 @@ export async function generatePost(
   const cleaned = raw.replace(/^---\s*\n?/, "").replace(/\n?\s*---$/, "");
   const posts = cleaned
     .split(/\n\s*---\s*\n/)
-    .map((p) => p.trim())
+    .map((p) => stripLeadingPostLabel(p.trim()))
     .filter((p) => p.length > 0);
 
   return posts.length > 0 ? posts : [raw];
+}
+
+function splitIntoSentences(paragraph: string): string[] {
+  const matches = paragraph.match(/[^.!?]+[.!?]+(?:\s+|$)/g);
+  const sentences = matches
+    ? matches.map((s) => s.trim()).filter(Boolean)
+    : [paragraph.trim()];
+  return sentences.length > 0 ? sentences : [paragraph.trim()];
+}
+
+function splitLongSentenceByWords(sentence: string, charMax: number): string[] {
+  const words = sentence.split(" ");
+  const chunks: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= charMax) {
+      current = candidate;
+    } else {
+      if (current) chunks.push(current);
+      current = word.length <= charMax ? word : word.slice(0, charMax);
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+interface SentencePiece {
+  text: string;
+  newParagraph: boolean;
+}
+
+function tokenizeSentences(text: string): SentencePiece[] {
+  const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const pieces: SentencePiece[] = [];
+
+  paragraphs.forEach((paragraph) => {
+    const matches = paragraph.match(/[^.!?]+[.!?]+(?:\s+|$)/g);
+    const sentences = matches ? matches.map((s) => s.trim()).filter(Boolean) : [paragraph];
+    sentences.forEach((sentence, i) => {
+      pieces.push({ text: sentence, newParagraph: i === 0 });
+    });
+  });
+
+  return pieces.length > 0 ? pieces : [{ text, newParagraph: true }];
+}
+
+export function stripLeadingPostLabel(text: string): string {
+  return text
+    .replace(/^\s*(?:\*\*)?post\s*\d+(?:\s*of\s*\d+)?(?:\*\*)?\s*[:.\-]\s*/i, "")
+    .trim();
+}
+
+export function splitPostByCharLimit(text: string, charMin: number, charMax: number): string[] {
+  const pieces = tokenizeSentences(text);
+  const total = text.length;
+  const numChunks = Math.max(1, Math.ceil(total / charMax));
+  const targetSize = total / numChunks;
+
+  const chunks: string[] = [];
+  let current = "";
+
+  pieces.forEach((piece) => {
+    const oversizedSentence = piece.text.length > charMax;
+    const parts = oversizedSentence ? splitLongSentenceByWords(piece.text, charMax) : [piece.text];
+
+    parts.forEach((part, partIndex) => {
+      const moreChunksToFill = chunks.length < numChunks - 1;
+      const separator = current === "" ? "" : piece.newParagraph && partIndex === 0 ? "\n\n" : " ";
+      const candidate = `${current}${separator}${part}`;
+
+      const overCharMax = candidate.length > charMax;
+      const pastTarget = current.length >= targetSize && moreChunksToFill;
+
+      if (current && (overCharMax || pastTarget)) {
+        chunks.push(current);
+        current = part;
+      } else {
+        current = candidate;
+      }
+    });
+  });
+
+  if (current) chunks.push(current);
+
+  for (let i = chunks.length - 1; i > 0; i--) {
+    if (chunks[i].length < charMin) {
+      const merged = `${chunks[i - 1]} ${chunks[i]}`;
+      if (merged.length <= charMax) {
+        chunks[i - 1] = merged;
+        chunks.splice(i, 1);
+      }
+    }
+  }
+
+  return chunks;
 }

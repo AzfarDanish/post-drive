@@ -13,6 +13,12 @@ create table user_preferences (
 
     char_max integer not null default 480,
 
+    target_audience text not null default '',
+
+    main_problem text not null default '',
+
+    key_features text not null default '',
+
     updated_at timestamptz default now()
 );
 

@@ -54,6 +54,9 @@ export default function PostPage() {
   const [media, setMedia] = useState<PostMedia[]>([{ status: "none" }]);
 
   const [businessDescription, setBusinessDescription] = useState("");
+  const [targetAudience, setTargetAudience] = useState("");
+  const [mainProblem, setMainProblem] = useState("");
+  const [keyFeatures, setKeyFeatures] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [tone, setTone] = useState<Tone>("rage-bait");
   const [charMin, setCharMin] = useState(240);
@@ -176,6 +179,9 @@ export default function PostPage() {
             setCharMin(data.char_min);
             setCharMax(data.char_max);
           }
+          setTargetAudience(data.target_audience || "");
+          setMainProblem(data.main_problem || "");
+          setKeyFeatures(data.key_features || "");
         }
       } catch {
         // silently fail - form stays at defaults
@@ -198,6 +204,9 @@ export default function PostPage() {
           website_url: websiteUrl.trim(),
           char_min: charMin,
           char_max: charMax,
+          target_audience: targetAudience.trim(),
+          main_problem: mainProblem.trim(),
+          key_features: keyFeatures.trim(),
         }),
       });
       if (res.ok) {
@@ -301,6 +310,9 @@ export default function PostPage() {
           tone,
           charMin,
           charMax,
+          targetAudience: targetAudience.trim() || undefined,
+          mainProblem: mainProblem.trim() || undefined,
+          keyFeatures: keyFeatures.trim() || undefined,
         }),
       });
 
@@ -408,7 +420,49 @@ export default function PostPage() {
               onChange={(e) => setBusinessDescription(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="e.g. We sell organic coffee subscriptions..."
-              rows={4}
+              rows={2}
+              disabled={aiStatus === "generating"}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Target audience <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={targetAudience}
+              onChange={(e) => setTargetAudience(e.target.value)}
+              placeholder="e.g. Freelancers, small business owners"
+              rows={2}
+              disabled={aiStatus === "generating"}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Main problem you solve <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={mainProblem}
+              onChange={(e) => setMainProblem(e.target.value)}
+              placeholder="e.g. People waste time on manual scheduling"
+              rows={2}
+              disabled={aiStatus === "generating"}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Key features <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={keyFeatures}
+              onChange={(e) => setKeyFeatures(e.target.value)}
+              placeholder="e.g. Auto-scheduling, analytics, team collaboration"
+              rows={2}
               disabled={aiStatus === "generating"}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
             />
@@ -418,12 +472,13 @@ export default function PostPage() {
             <label className="text-sm font-medium">
               Website URL <span className="text-gray-400 font-normal">(optional)</span>
             </label>
-            <input
+            <textarea
               value={websiteUrl}
               onChange={(e) => setWebsiteUrl(e.target.value)}
               placeholder="https://example.com"
+              rows={2}
               disabled={aiStatus === "generating"}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
             />
           </div>
 
