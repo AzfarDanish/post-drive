@@ -41,7 +41,7 @@ function tonePrompt(rules: string): string {
 You are a writer who crafts viral Threads threads.
 
 Write a thread of 2-4 posts based on the business information provided.
-Each post under 500 characters. No emojis. No marketing.
+No emojis. No marketing.
 
 Rules:
 ${rules}
@@ -109,9 +109,12 @@ export async function generatePost(
 
   const openai = getOpenAI();
 
+  let system = systemPrompts[tone];
+  system += "\n\n- Each post under 500 characters.";
+
   const { text: generated } = await generateText({
     model: openai("gpt-4o-mini"),
-    system: systemPrompts[tone],
+    system,
     prompt: context,
     temperature: 0.8,
   });

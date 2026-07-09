@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
-  const { posts } = await req.json();
+  const { posts, media } = await req.json();
 
   if (
     !Array.isArray(posts) ||
@@ -36,52 +36,71 @@ export async function POST(req: NextRequest) {
 
   for (let i = 0; i < posts.length; i++) {
     const text = posts[i].trim();
+    const postMedia: { url: string; mediaType: "IMAGE" | "VIDEO" } | null =
+      media?.[i] ?? null;
+
+    if (i > 0 && publishedIds[i - 1]) {
+      await new Promise((resolve) => setTimeout(resolve, 3_000));
+    }
 
     const body: Record<string, string> = {
-      media_type: "TEXT",
-      text,
+      media_type: postMedia ? postMedia.mediaType : "TEXT",
       access_token: token,
     };
 
-    if (i > 0 && publishedIds[i - 1]) {
-      body.reply_to = publishedIds[i - 1];
+    if (postMedia) {
+      const urlKey =
+        postMedia.mediaType === "IMAGE" ? "image_url" : "video_url";
+      body[urlKey] = postMedia.url;
+      body.text = text;
+    } else {
+      body.text = text;
     }
 
-    const containerRes = await fetch(
-      `${base}/${userId}/threads`,
-      {
+    if (i > 0 && publishedIds[i - 1]) {
+      body.reply_to_id = publishedIds[i - 1];
+    }
+
+    let containerData: { id?: string };
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      const containerRes = await fetch(`${base}/${userId}/threads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+      });
+
+      containerData = await containerRes.json();
+
+      if (containerRes.ok) break;
+
+      attempts++;
+      if (attempts >= maxAttempts) {
+        return NextResponse.json(
+          {
+            error: `Failed to create container for post ${i + 1}`,
+            details: containerData,
+            published: publishedIds,
+          },
+          { status: 500 }
+        );
       }
-    );
 
-    const containerData = await containerRes.json();
-
-    if (!containerRes.ok) {
-      return NextResponse.json(
-        {
-          error: `Failed to create container for post ${i + 1}`,
-          details: containerData,
-          published: publishedIds,
-        },
-        { status: 500 }
-      );
+      await new Promise((resolve) => setTimeout(resolve, 2_000 * attempts));
     }
 
-    const { id: creation_id } = containerData;
+    const { id: creation_id } = containerData!;
 
-    const publishRes = await fetch(
-      `${base}/${userId}/threads_publish`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          creation_id,
-          access_token: token,
-        }),
-      }
-    );
+    const publishRes = await fetch(`${base}/${userId}/threads_publish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        creation_id,
+        access_token: token,
+      }),
+    });
 
     const publishData = await publishRes.json();
 
