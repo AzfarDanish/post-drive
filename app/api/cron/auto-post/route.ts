@@ -11,6 +11,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const dryRun = req.nextUrl.searchParams.get("dryRun") === "true";
+
   const { data: account } = await supabase
     .from("threads_accounts")
     .select("*")
@@ -22,7 +24,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "No connected account" }, { status: 400 });
   }
 
-  if (!account.is_enabled) {
+  if (!dryRun && !account.is_enabled) {
     return NextResponse.json({ message: "Auto-post is disabled" });
   }
 
@@ -49,7 +51,12 @@ export async function GET(req: NextRequest) {
         keyFeatures: prefs.key_features || undefined,
       });
 
-      const result = await publishToThreads(posts);
+      let result;
+      if (dryRun) {
+        result = { success: false, post_ids: [], published_count: 0 };
+      } else {
+        result = await publishToThreads(posts);
+      }
 
       await supabase.from("post_log").insert({
         posts: JSON.parse(JSON.stringify(posts)),
@@ -73,5 +80,8 @@ export async function GET(req: NextRequest) {
     }
   });
 
-  return NextResponse.json({ message: "auto-post started" });
+  return NextResponse.json({
+    message: dryRun ? "dry-run complete" : "auto-post started",
+    dryRun,
+  });
 }
