@@ -9,7 +9,6 @@ interface Account {
   threads_user_id: string;
   username?: string | null;
   is_enabled: boolean;
-  post_hour_utc: number;
 }
 
 export default function ConnectPage() {
@@ -55,20 +54,6 @@ export default function ConnectPage() {
     }
   }
 
-  const hours = Array.from({ length: 24 }, (_, i) => i);
-
-  async function setPostHour(acc: Account, hour: number) {
-    setAccounts((prev) =>
-      prev.map((a) => (a.id === acc.id ? { ...a, post_hour_utc: hour } : a))
-    );
-
-    await fetch("/api/threads/account", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: acc.id, post_hour_utc: hour }),
-    });
-  }
-
   if (loading || checking) return null;
 
   return (
@@ -101,20 +86,6 @@ export default function ConnectPage() {
                   />
                   <div className="w-9 h-5 bg-[#D8D2C4] rounded-full peer peer-checked:bg-[#3F7857] peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#3F7857]/30 transition-colors after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
                 </label>
-              </div>
-              <div className="flex items-center justify-between">
-                <label className="text-xs text-[#6B6459]">Post at</label>
-                <select
-                  value={acc.post_hour_utc}
-                  onChange={(e) => setPostHour(acc, Number(e.target.value))}
-                  className="text-xs border border-[#E4DFD3] rounded-lg bg-white px-2 py-1 text-[#1D1B18]"
-                >
-                  {hours.map((h) => (
-                    <option key={h} value={h}>
-                      {h.toString().padStart(2, "0")}:00 UTC
-                    </option>
-                  ))}
-                </select>
               </div>
               <p className="text-xs text-[#A39C8C]">
                 Auto-post: {acc.is_enabled ? "On" : "Off"}
