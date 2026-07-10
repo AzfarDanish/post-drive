@@ -9,6 +9,22 @@ function getOpenAI() {
   });
 }
 
+const CONTENT_ANGLES = [
+  "one specific pain point the audience feels day to day, described concretely",
+  "one specific feature, explained only through what it lets someone do",
+  "a mistake people commonly make without this kind of solution",
+  "a before and after moment, one specific change, not the whole journey",
+  "a myth or wrong assumption people have about the problem being solved",
+  "a quick practical tip related to the problem, not a pitch",
+  "a short personal-sounding observation about the problem",
+];
+
+function pickAngle(exclude: string[] = []): string {
+  const pool = CONTENT_ANGLES.filter((a) => !exclude.includes(a));
+  const options = pool.length > 0 ? pool : CONTENT_ANGLES;
+  return options[Math.floor(Math.random() * options.length)];
+}
+
 const writingStyle = `# FOLLOW THIS WRITING STYLE:
 
 • Write at B2 level or below. Simple English. Short words. No advanced vocabulary.
@@ -86,7 +102,8 @@ export async function generatePost(
   charMax: number = 480,
   targetAudience?: string,
   mainProblem?: string,
-  keyFeatures?: string
+  keyFeatures?: string,
+  recentPostSummaries?: string[]
 ): Promise<string[]> {
   let context = `Business description: ${businessDescription}`;
 
@@ -104,15 +121,22 @@ export async function generatePost(
   }
 
   const openai = getOpenAI();
+  const angle = pickAngle(recentPostSummaries?.map(s => s.slice(0, 140)) || []);
 
   let system = systemPrompts[tone];
   system += `\n\n- Each post must be between ${charMin} and ${charMax} characters. This is a hard limit, not a target. If you are approaching ${charMax} characters, end the post there and continue the idea in the next post instead of cramming it in.`;
+  system += `\n\n- For this post, focus only on this angle: ${angle}. Mention only the part of the business relevant to this angle. Do not restate the full business description or list every feature. A brief, partial reference to what the business does is enough in the final post.`;
+
+  if (recentPostSummaries && recentPostSummaries.length > 0) {
+    system += `\n\n- Do not repeat these ideas, openings, or angles used in recent posts:\n${recentPostSummaries.map((s) => `- ${s}`).join("\n")}\n- Write about something clearly different from all of the above.`;
+  }
 
   const { text: generated } = await generateText({
     model: openai("gpt-4o-mini"),
     system,
     prompt: context,
-    temperature: 0.8,
+    temperature: 0.9,
+    frequencyPenalty: 0.4,
   });
 
   const raw = generated.trim();

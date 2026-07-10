@@ -50,6 +50,7 @@ export interface GenerateOptions {
   targetAudience?: string;
   mainProblem?: string;
   keyFeatures?: string;
+  recentPostSummaries?: string[];
 }
 
 export async function generateAndProcessPosts(
@@ -64,6 +65,7 @@ export async function generateAndProcessPosts(
     targetAudience,
     mainProblem,
     keyFeatures,
+    recentPostSummaries,
   } = options;
 
   const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -76,14 +78,15 @@ export async function generateAndProcessPosts(
     charMax,
     targetAudience,
     mainProblem,
-    keyFeatures
+    keyFeatures,
+    recentPostSummaries
   );
 
   const link = websiteUrl || "";
   const posts: string[] = [];
 
   for (const post of rawPosts) {
-    let cleaned = stripLeadingPostLabel(post.trim());
+    const cleaned = stripLeadingPostLabel(post.trim());
 
     if (cleaned.length > charMax) {
       const chunks = splitPostByCharLimit(cleaned, charMin, charMax).map(stripLeadingPostLabel);
@@ -125,6 +128,7 @@ export async function generateAndProcessPosts(
                   ? `\n\nYour last attempt was ${lastAttempt.length} characters. That is under the ${charMin} minimum. Add more relevant detail. Do not pad with filler.`
                   : ""),
               temperature: 0.7,
+              frequencyPenalty: 0.4,
             });
             const candidate = stripLeadingPostLabel(text.trim()).slice(0, charMax);
             lastAttempt = candidate;

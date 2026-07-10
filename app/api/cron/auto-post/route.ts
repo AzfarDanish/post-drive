@@ -38,6 +38,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "No preferences configured" }, { status: 400 });
   }
 
+  const { data: history } = await getSupabase()
+    .from("post_log")
+    .select("posts")
+    .eq("threads_account_id", account.id)
+    .eq("was_published", true)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const recentPostSummaries = (history ?? [])
+    .map((row) => {
+      const posts = row.posts as string[];
+      return posts?.[0]?.slice(0, 140);
+    })
+    .filter((s): s is string => Boolean(s));
+
   after(async () => {
     try {
       const posts = await generateAndProcessPosts({
@@ -49,6 +64,7 @@ export async function GET(req: NextRequest) {
         targetAudience: prefs.target_audience || undefined,
         mainProblem: prefs.main_problem || undefined,
         keyFeatures: prefs.key_features || undefined,
+        recentPostSummaries,
       });
 
       let result;
@@ -62,6 +78,7 @@ export async function GET(req: NextRequest) {
         posts: JSON.parse(JSON.stringify(posts)),
         was_published: result.success,
         error: result.success ? null : result.error || null,
+        threads_account_id: account.id,
       });
 
       if (result.success) {
@@ -76,6 +93,7 @@ export async function GET(req: NextRequest) {
         posts: [],
         was_published: false,
         error: message,
+        threads_account_id: account.id,
       });
     }
   });

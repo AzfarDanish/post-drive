@@ -5,7 +5,7 @@ import type { Tone } from "@/lib/ai";
 const validTones: Tone[] = ["rage-bait", "hot-take", "storytelling", "educational"];
 
 export async function POST(req: NextRequest) {
-  const { businessDescription, websiteUrl, tone, charMin, charMax, targetAudience, mainProblem, keyFeatures } = await req.json();
+  const { businessDescription, websiteUrl, tone, charMin, charMax, targetAudience, mainProblem, keyFeatures, recentPostSummaries } = await req.json();
 
   if (!businessDescription || typeof businessDescription !== "string") {
     return NextResponse.json(
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
       targetAudience: typeof targetAudience === "string" ? targetAudience.trim() || undefined : undefined,
       mainProblem: typeof mainProblem === "string" ? mainProblem.trim() || undefined : undefined,
       keyFeatures: typeof keyFeatures === "string" ? keyFeatures.trim() || undefined : undefined,
+      recentPostSummaries: Array.isArray(recentPostSummaries) ? recentPostSummaries.filter((s): s is string => typeof s === "string" && s.length > 0) : undefined,
     };
 
     const posts = await generateAndProcessPosts(options);
