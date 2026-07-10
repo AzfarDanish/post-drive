@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, type KeyboardEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
+import { useAuth } from "@/components/auth-provider";
 
 const fraunces = Fraunces({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-display" });
 const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-body" });
@@ -129,6 +131,7 @@ function MediaField({
     <div className="flex items-center gap-2">
       <input
         ref={(el) => {
+          // eslint-disable-next-line react-hooks/immutability
           fileInputRefs.current[index] = el;
         }}
         type="file"
@@ -265,6 +268,8 @@ function PostComposer({
 }
 
 export default function PostPage() {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [posts, setPosts] = useState<string[]>([""]);
   const [media, setMedia] = useState<PostMedia[]>([{ status: "none" }]);
 
@@ -293,6 +298,29 @@ export default function PostPage() {
 
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const fetchedOgUrls = useRef<Set<string>>(new Set());
+
+  const [connAccounts, setConnAccounts] = useState<{ id: string; threads_user_id: string; username?: string | null }[]>([]);
+  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/login");
+    }
+  }, [user, authLoading, router]);
+
+  useEffect(() => {
+    async function loadAccounts() {
+      try {
+        const res = await fetch("/api/threads/check");
+        const data = await res.json();
+        if (data.accounts?.length) {
+          setConnAccounts(data.accounts);
+          setActiveAccountId(data.accounts[0].id);
+        }
+      } catch {}
+    }
+    if (user) loadAccounts();
+  }, [user]);
 
   function updatePost(index: number, value: string) {
     setPosts((prev) => {
@@ -376,36 +404,50 @@ export default function PostPage() {
     });
   }, [posts]);
 
-  useEffect(() => {
-    async function loadPrefs() {
-      try {
-        const res = await fetch("/api/preferences");
-        if (res.ok) {
-          const data = await res.json();
-          setBusinessDescription(data.business_description || "");
-          setWebsiteUrl(data.website_url || "");
-          if (data.default_tone) setTone(data.default_tone as Tone);
-          if (data.char_min && data.char_max) {
-            setCharMin(data.char_min);
-            setCharMax(data.char_max);
-          }
-          setTargetAudience(data.target_audience || "");
-          setMainProblem(data.main_problem || "");
-          setKeyFeatures(data.key_features || "");
+  async function loadPrefs(accountId?: string) {
+    setPrefsStatus("loading");
+    try {
+      const url = accountId
+        ? `/api/preferences?account_id=${accountId}`
+        : "/api/preferences";
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setBusinessDescription(data.business_description || "");
+        setWebsiteUrl(data.website_url || "");
+        if (data.default_tone) setTone(data.default_tone as Tone);
+        if (data.char_min && data.char_max) {
+          setCharMin(data.char_min);
+          setCharMax(data.char_max);
         }
-      } catch {
-        // silently fail - form stays at defaults
-      } finally {
-        setPrefsStatus("loaded");
+        setTargetAudience(data.target_audience || "");
+        setMainProblem(data.main_problem || "");
+        setKeyFeatures(data.key_features || "");
       }
+    } catch {
+      // silently fail - form stays at defaults
+    } finally {
+      setPrefsStatus("loaded");
     }
+  }
+
+  useEffect(() => {
     loadPrefs();
   }, []);
+
+  useEffect(() => {
+    if (activeAccountId) {
+      loadPrefs(activeAccountId);
+    }
+  }, [activeAccountId]);
 
   async function handleSavePrefs() {
     setSaveStatus("saving");
     try {
-      const res = await fetch("/api/preferences", {
+      const url = activeAccountId
+        ? `/api/preferences?account_id=${activeAccountId}`
+        : "/api/preferences";
+      const res = await fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -577,6 +619,7 @@ export default function PostPage() {
       body: JSON.stringify({
         posts: posts.map((p) => p.trim()),
         media: mediaPayload,
+        threads_account_id: activeAccountId,
       }),
     });
 
@@ -858,6 +901,24 @@ export default function PostPage() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {connAccounts.length > 1 && (
+              <div className="space-y-1.5">
+                <label className={eyebrowClass}>Publish to</label>
+                <select
+                  value={activeAccountId ?? ""}
+                  onChange={(e) => setActiveAccountId(e.target.value)}
+                  disabled={publishStatus === "publishing"}
+                  className="w-full rounded-xl border border-[#E4DFD3] bg-white px-3 py-2 text-sm text-[#1D1B18] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468]"
+                >
+                  {connAccounts.map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.username || `Threads #${acc.threads_user_id.slice(0, 8)}`}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 

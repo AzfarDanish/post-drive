@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { publishToThreads } from "@/lib/publish";
 
 export async function POST(req: NextRequest) {
-  const { posts, media } = await req.json();
+  const { posts, media, threads_account_id } = await req.json();
 
   if (
     !Array.isArray(posts) ||
@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const result = await publishToThreads(posts, media);
+  const result = await publishToThreads(posts, media, threads_account_id);
 
   if (!result.success) {
     return NextResponse.json(

@@ -1,21 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 export async function POST(req: NextRequest) {
-  const { text } = await req.json();
+  const { text, threads_account_id } = await req.json();
 
   if (!text || typeof text !== "string") {
     return NextResponse.json({ error: "text is required" }, { status: 400 });
   }
 
-  const { data: account, error: queryError } = await getSupabase()
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const query = supabase
     .from("threads_accounts")
     .select("threads_user_id, access_token")
+    .eq("user_id", user.id);
+
+  if (threads_account_id) {
+    query.eq("id", threads_account_id);
+  }
+
+  const { data: account } = await query
     .order("created_at", { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
-  if (queryError || !account) {
+  if (!account) {
     return NextResponse.json(
       { error: "No connected Threads account found. Connect at /connect" },
       { status: 401 }

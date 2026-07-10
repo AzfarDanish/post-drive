@@ -1,46 +1,59 @@
 import { NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
-  const { data: account, error: queryError } = await getSupabase()
-    .from("threads_accounts")
-    .select("threads_user_id, access_token")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (queryError || !account) {
+  if (!user) {
+    return NextResponse.json(
+      { error: "Not authenticated" },
+      { status: 401 }
+    );
+  }
+
+  const { data: accounts } = await supabase
+    .from("threads_accounts")
+    .select("id, threads_user_id, access_token, is_enabled")
+    .eq("user_id", user.id);
+
+  if (!accounts || accounts.length === 0) {
     return NextResponse.json({
       connected: false,
-      message: "No connected Threads account found. Connect at /connect",
+      accounts: [],
+      message: "No connected Threads accounts found. Connect at /connect",
     });
   }
 
-  const base = "https://graph.threads.net/v1.0";
+  const results = await Promise.all(
+    accounts.map(async (account) => {
+      const base = "https://graph.threads.net/v1.0";
 
-  const meRes = await fetch(
-    `${base}/me?fields=id,username,name&access_token=${account.access_token}`
+      const [meRes, limitRes] = await Promise.all([
+        fetch(
+          `${base}/me?fields=id,username,name&access_token=${account.access_token}`
+        ),
+        fetch(
+          `${base}/${account.threads_user_id}/threads_publishing_limit?access_token=${account.access_token}`
+        ),
+      ]);
+
+      const meData = await meRes.json();
+      const limitData = await limitRes.json();
+
+      return {
+        id: account.id,
+        threads_user_id: account.threads_user_id,
+        username: meRes.ok ? meData.username || meData.name || null : null,
+        is_enabled: account.is_enabled,
+        token_preview: account.access_token.slice(0, 20) + "...",
+        me: { ok: meRes.ok, data: meData },
+        publishing_limit: { ok: limitRes.ok, data: limitData },
+      };
+    })
   );
 
-  const meData = await meRes.json();
-
-  const limitRes = await fetch(
-    `${base}/${account.threads_user_id}/threads_publishing_limit?access_token=${account.access_token}`
-  );
-
-  const limitData = await limitRes.json();
-
-  return NextResponse.json({
-    connected: true,
-    threads_user_id: account.threads_user_id,
-    token_preview: account.access_token.slice(0, 20) + "...",
-    me: {
-      ok: meRes.ok,
-      data: meData,
-    },
-    publishing_limit: {
-      ok: limitRes.ok,
-      data: limitData,
-    },
-  });
+  return NextResponse.json({ connected: true, accounts: results });
 }

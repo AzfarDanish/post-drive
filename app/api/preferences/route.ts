@@ -1,24 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 const VALID_TONES = ["rage-bait", "hot-take", "storytelling", "educational"];
 
-export async function GET() {
-  const { data: account, error: queryError } = await getSupabase()
-    .from("threads_accounts")
-    .select("id")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
+export async function GET(req: NextRequest) {
+  const accountId = req.nextUrl.searchParams.get("account_id");
 
-  if (queryError || !account) {
-    return NextResponse.json(
-      { error: "No connected Threads account found" },
-      { status: 404 }
-    );
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { data: prefs } = await getSupabase()
+  const query = supabase
+    .from("threads_accounts")
+    .select("id")
+    .eq("user_id", user.id);
+
+  if (accountId) {
+    query.eq("id", accountId);
+  }
+
+  const { data: account } = await query
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!account) {
+    const defaultPrefs = {
+      default_tone: "rage-bait",
+      business_description: "",
+      website_url: "",
+      char_min: 240,
+      char_max: 480,
+      target_audience: "",
+      main_problem: "",
+      key_features: "",
+    };
+    return NextResponse.json(defaultPrefs);
+  }
+
+  const { data: prefs } = await supabase
     .from("user_preferences")
     .select("*")
     .eq("threads_account_id", account.id)
@@ -51,14 +76,32 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const { data: account, error: queryError } = await getSupabase()
+  const accountId = req.nextUrl.searchParams.get("account_id");
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
+  const query = supabase
     .from("threads_accounts")
     .select("id")
+    .eq("user_id", user.id);
+
+  if (accountId) {
+    query.eq("id", accountId);
+  }
+
+  const { data: account } = await query
     .order("created_at", { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
-  if (queryError || !account) {
+  if (!account) {
     return NextResponse.json(
       { error: "No connected Threads account found" },
       { status: 404 }
@@ -92,7 +135,7 @@ export async function PUT(req: NextRequest) {
   const key_features =
     typeof body.key_features === "string" ? body.key_features : "";
 
-  const { data: prefs, error: upsertError } = await getSupabase()
+  const { data: prefs, error: upsertError } = await supabase
     .from("user_preferences")
     .upsert(
       {

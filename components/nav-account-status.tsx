@@ -1,36 +1,60 @@
-import { getSupabase } from "@/lib/supabase";
+"use client";
 
-export default async function NavAccountStatus() {
-  const { data } = await getSupabase()
-    .from("threads_accounts")
-    .select("threads_user_id")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+import { useAuth } from "@/components/auth-provider";
+import { useRouter } from "next/navigation";
 
-  const connected = !!data;
+export default function NavAccountStatus() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
+
+  if (loading) {
+    return null;
+  }
+
+  if (!user) {
+    return (
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+        <a
+          href="/login"
+          style={{ color: "#2F4468", fontWeight: 500, textDecoration: "none" }}
+        >
+          Sign in
+        </a>
+      </div>
+    );
+  }
 
   return (
-    <span
+    <div
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
         marginLeft: "auto",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
         fontSize: 13,
-        color: connected ? "#16a34a" : "#9ca3af",
       }}
     >
-      <span
+      <span style={{ color: "#6B6459" }}>{user.email}</span>
+      <button
+        onClick={handleLogout}
         style={{
-          width: 8,
-          height: 8,
-          borderRadius: "50%",
-          background: connected ? "#16a34a" : "#9ca3af",
-          display: "inline-block",
+          background: "none",
+          border: "1px solid #E4DFD3",
+          borderRadius: 6,
+          padding: "4px 10px",
+          fontSize: 12,
+          color: "#57534A",
+          cursor: "pointer",
         }}
-      />
-      {connected ? "Connected" : "Not connected"}
-    </span>
+      >
+        Sign out
+      </button>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { getSupabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 
 export interface ThreadsAccount {
   threads_user_id: string;
@@ -20,16 +20,38 @@ export interface PublishResult {
 
 export async function publishToThreads(
   posts: string[],
-  media?: (PostMedia | null)[]
+  media?: (PostMedia | null)[],
+  threadsAccountId?: string
 ): Promise<PublishResult> {
-  const { data: account, error: queryError } = await getSupabase()
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      success: false,
+      post_ids: [],
+      error: "Not authenticated",
+      published_count: 0,
+    };
+  }
+
+  const query = supabase
     .from("threads_accounts")
     .select("threads_user_id, access_token")
+    .eq("user_id", user.id);
+
+  if (threadsAccountId) {
+    query.eq("id", threadsAccountId);
+  }
+
+  const { data: account } = await query
     .order("created_at", { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
-  if (queryError || !account) {
+  if (!account) {
     return {
       success: false,
       post_ids: [],

@@ -4,9 +4,36 @@
 -- Apply this whole file to a fresh Supabase project to recreate the schema.
 -- =============================================================================
 
--- 1. threads_accounts ---------------------------------------------------------
--- Stores one connected Threads account (single-user for now).
--- Only the latest row (by created_at) is used.
+-- 1. users --------------------------------------------------------------------
+-- Synced from auth.users via trigger on_auth_user_created.
+-- Custom app-level user data lives here.
+
+create table users (
+    id uuid primary key references auth.users(id) on delete cascade,
+    email text,
+    created_at timestamptz default now()
+);
+
+create function public.handle_new_user()
+returns trigger as $$
+begin
+    insert into public.users (id, email)
+    values (new.id, new.email);
+    return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_auth_user_created
+    after insert on auth.users
+    for each row execute function public.handle_new_user();
+
+alter table users enable row level security;
+create policy "users_own_row" on users for all using (auth.uid() = id);
+
+
+-- 2. threads_accounts ---------------------------------------------------------
+-- Stores Threads accounts linked to app users via user_id.
+-- Multiple accounts per user are supported.
 
 create table threads_accounts (
     id uuid primary key default gen_random_uuid(),
@@ -17,15 +44,18 @@ create table threads_accounts (
 
     created_at timestamptz default now(),
 
-    -- Added by migration 2026-07-10: auto-post / token management
-    token_expires_at timestamptz,           -- when the long-lived token expires; refresh cron uses this
-    is_enabled boolean not null default false, -- kill switch: false = shadow mode (log only), true = publishes
-    post_hour_utc int not null default 14,     -- hour of day (UTC) that auto-post cron fires
-    last_posted_at timestamptz                 -- timestamp of last successful auto-publish
+    token_expires_at timestamptz,
+    is_enabled boolean not null default false,
+    post_hour_utc int not null default 14,
+    last_posted_at timestamptz,
+
+    user_id uuid references users(id)
 );
 
+create index idx_threads_accounts_user_id on threads_accounts(user_id);
 
--- 2. user_preferences ---------------------------------------------------------
+
+-- 3. user_preferences ---------------------------------------------------------
 -- AI generation settings saved from the /post form.
 -- One row per threads_account.
 
@@ -56,34 +86,46 @@ create table user_preferences (
 create unique index idx_user_preferences_account on user_preferences(threads_account_id);
 
 
--- 3. post_log -----------------------------------------------------------------
+-- 4. post_log -----------------------------------------------------------------
 -- Every auto-post cron run logs here, whether it published or not.
 -- Used for shadow-mode review and debugging.
 
 create table post_log (
     id uuid primary key default gen_random_uuid(),
-    posts jsonb not null,               -- array of post strings that were generated
-    was_published boolean not null default false, -- true only if publishToThreads succeeded
-    error text,                         -- error message if publishing failed
-    created_at timestamptz not null default now()
+    posts jsonb not null,
+    was_published boolean not null default false,
+    error text,
+    created_at timestamptz not null default now(),
+    threads_account_id uuid references threads_accounts(id) on delete cascade
 );
 
 
--- 4. Row-Level Security -------------------------------------------------------
--- All tables are backend-only (accessed via SUPABASE_SERVICE_ROLE_KEY which
--- bypasses RLS). These policies block any direct client-side access.
--- Enable only when you want to lock down against the anon key.
+-- 5. Row-Level Security -------------------------------------------------------
+-- Ensures users can only access their own data.
 
--- ALTER TABLE threads_accounts ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE post_log ENABLE ROW LEVEL SECURITY;
+alter table threads_accounts enable row level security;
+alter table user_preferences enable row level security;
+alter table post_log enable row level security;
 
--- CREATE POLICY "block_anon_access" ON threads_accounts FOR ALL USING (false);
--- CREATE POLICY "block_anon_access" ON user_preferences FOR ALL USING (false);
--- CREATE POLICY "block_anon_access" ON post_log FOR ALL USING (false);
+create policy "users_own_accounts" on threads_accounts
+  for all using (auth.uid() = user_id);
+
+create policy "users_own_preferences" on user_preferences
+  for all using (
+    threads_account_id in (
+      select id from threads_accounts where user_id = auth.uid()
+    )
+  );
+
+create policy "users_own_post_log" on post_log
+  for all using (
+    threads_account_id in (
+      select id from threads_accounts where user_id = auth.uid()
+    )
+  );
 
 
--- 5. Useful queries -----------------------------------------------------------
+-- 6. Useful queries -----------------------------------------------------------
 
 -- Check auto-post status:
 -- SELECT id, threads_user_id, is_enabled, token_expires_at, last_posted_at FROM threads_accounts;
