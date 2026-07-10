@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { supabase } from "@/lib/supabase";
+
+async function safeJson(res: Response): Promise<{ ok: boolean; data: unknown }> {
+  const text = await res.text();
+  try {
+    return { ok: res.ok, data: JSON.parse(text) };
+  } catch {
+    return { ok: res.ok, data: text };
+  }
+}
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get("code");
-  const error = req.nextUrl.searchParams.get("error");
+  const errorParam = req.nextUrl.searchParams.get("error");
+  const returnedState = req.nextUrl.searchParams.get("state");
 
-  if (error) {
-    return NextResponse.json({ error }, { status: 400 });
+  if (errorParam) {
+    return NextResponse.json({ error: errorParam }, { status: 400 });
   }
 
   if (!code) {
@@ -16,13 +27,24 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const response = await fetch(
+  const cookieStore = await cookies();
+  const storedState = cookieStore.get("oauth_state")?.value;
+
+  if (storedState && returnedState !== storedState) {
+    return NextResponse.json(
+      { error: "State mismatch — possible CSRF attack" },
+      { status: 403 }
+    );
+  }
+
+  cookieStore.delete("oauth_state");
+
+  const tokenRes = await fetch(
     "https://graph.threads.net/oauth/access_token",
     {
       method: "POST",
       headers: {
-        "Content-Type":
-          "application/x-www-form-urlencoded",
+        "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
         client_id: process.env.THREADS_APP_ID!,
@@ -34,51 +56,74 @@ export async function GET(req: NextRequest) {
     }
   );
 
-  const data = await response.json();
+  const { data: tokenData } = await safeJson(tokenRes);
 
-  if (!response.ok) {
-    return NextResponse.json(data, { status: 400 });
+  if (!tokenRes.ok) {
+    return NextResponse.json(
+      { error: "Token exchange failed", details: tokenData },
+      { status: 400 }
+    );
   }
 
-  const { access_token: short_lived_token, user_id } = data;
+  const { access_token: shortLivedToken, user_id } = tokenData as Record<
+    string,
+    unknown
+  >;
 
-  if (!short_lived_token || !user_id) {
+  if (!shortLivedToken || !user_id) {
     return NextResponse.json(
-      { error: "Invalid token response", data },
+      { error: "Invalid token response — missing access_token or user_id", details: tokenData },
       { status: 500 }
     );
   }
 
   const longLivedRes = await fetch(
-    "https://graph.threads.net/access_token?" +
-      new URLSearchParams({
-        grant_type: "th_exchange_token",
-        client_secret: process.env.THREADS_APP_SECRET!,
-        access_token: short_lived_token,
-      })
+    `https://graph.threads.net/access_token?${new URLSearchParams({
+      grant_type: "th_exchange_token",
+      client_secret: process.env.THREADS_APP_SECRET!,
+      access_token: shortLivedToken as string,
+    })}`
   );
 
-  const longLivedData = await longLivedRes.json();
-  const access_token = longLivedData.access_token || short_lived_token;
+  const { data: longLivedData } = await safeJson(longLivedRes);
+
+  if (!longLivedRes.ok) {
+    return NextResponse.json(
+      { error: "Long-lived token exchange failed", details: longLivedData },
+      { status: 500 }
+    );
+  }
+
+  const accessToken =
+    (longLivedData as Record<string, unknown>)?.access_token ||
+    shortLivedToken;
 
   const meRes = await fetch(
-    `https://graph.threads.net/v1.0/me?fields=id&access_token=${access_token}`
+    `https://graph.threads.net/v1.0/me?fields=id&access_token=${accessToken}`
   );
 
-  const meData = await meRes.json();
-  const threads_user_id = meData.id || user_id;
+  const { data: meData } = await safeJson(meRes);
+
+  if (!meRes.ok) {
+    return NextResponse.json(
+      { error: "Failed to fetch Threads user ID", details: meData },
+      { status: 500 }
+    );
+  }
+
+  const threadsUserId =
+    (meData as Record<string, unknown>)?.id || user_id;
 
   const { error: insertError } = await supabase
     .from("threads_accounts")
     .insert({
-      threads_user_id,
-      access_token,
+      threads_user_id: threadsUserId,
+      access_token: accessToken,
     });
 
   if (insertError) {
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
-  const redirectBase = new URL(process.env.THREADS_REDIRECT_URI!);
-  return NextResponse.redirect(new URL("/connected", redirectBase.origin));
+  return NextResponse.redirect(new URL("/connected", req.url).origin);
 }

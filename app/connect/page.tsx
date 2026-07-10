@@ -1,20 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConnectPage() {
-  const state = randomUUID();
-
-  const params = new URLSearchParams({
-    client_id: process.env.NEXT_PUBLIC_THREADS_APP_ID!,
-    redirect_uri: process.env.NEXT_PUBLIC_THREADS_REDIRECT_URI!,
-    scope: "threads_basic,threads_content_publish",
-    response_type: "code",
-    state,
-  });
-
-  const url = `https://www.threads.net/oauth/authorize?${params.toString()}`;
 
   const { data } = await supabase
     .from("threads_accounts")
@@ -29,7 +17,7 @@ export default async function ConnectPage() {
     <main style={{ padding: 40 }}>
       <h1>Connect Threads</h1>
       <a
-        href={url}
+        href="/api/auth/threads/login"
         style={{
           display: "inline-block",
           padding: "12px 24px",

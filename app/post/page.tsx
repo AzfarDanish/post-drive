@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, type KeyboardEvent } from "react";
+import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
+
+const fraunces = Fraunces({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-display" });
+const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-body" });
+const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono" });
 
 type Tone = "rage-bait" | "hot-take" | "storytelling" | "educational";
 
@@ -31,22 +36,232 @@ interface OgData {
 const SLIDER_MIN = 30;
 const SLIDER_MAX = 500;
 
+// Shared style tokens. Kept as plain strings so every field, card, and
+// button pulls from one place instead of re-typing the same class list.
+const textareaClass =
+  "w-full rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] px-3 py-2 text-sm text-[#1D1B18] placeholder:text-[#A39C8C] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468] resize-vertical disabled:bg-[#F1EEE6] disabled:text-[#A39C8C] transition-colors";
+
+const postTextareaClass =
+  "post-textarea w-full rounded-xl border border-[#E4DFD3] bg-white px-3 py-2.5 text-sm text-[#1D1B18] placeholder:text-[#A39C8C] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468] disabled:bg-[#F1EEE6] transition-colors";
+
+const secondaryButtonClass =
+  "rounded-xl border border-[#E4DFD3] px-4 py-2 text-sm font-medium text-[#57534A] hover:bg-[#F1EEE6] hover:text-[#1D1B18] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+
+const removeLinkClass =
+  "text-xs text-[#B3261E] hover:text-[#8A2A22] disabled:text-[#B8B2A3] disabled:cursor-not-allowed transition-colors";
+
+const addMediaLinkClass =
+  "text-xs text-[#2F4468] hover:text-[#1D2E47] font-medium disabled:text-[#B8B2A3] transition-colors";
+
+const eyebrowClass =
+  "text-xs font-semibold uppercase tracking-wide text-[#57534A] [font-family:var(--font-mono)]";
+
 function charBarColor(count: number, min: number, max: number) {
-  if (count < min) return "bg-red-500";
-  if (count > max) return "bg-red-500";
+  if (count < min) return "bg-[#B3261E]";
+  if (count > max) return "bg-[#B3261E]";
   const ratio = count / max;
   return ratio > 0.95
-    ? "bg-red-500"
+    ? "bg-[#B3261E]"
     : ratio > 0.85
-      ? "bg-orange-500"
+      ? "bg-[#B8862E]"
       : ratio > 0.7
-        ? "bg-yellow-500"
-        : "bg-green-500";
+        ? "bg-[#D9B44A]"
+        : "bg-[#3F7857]";
 }
 
 function extractFirstUrl(text: string): string | null {
   const match = text.match(/https?:\/\/[^\s]+/);
   return match ? match[0] : null;
+}
+
+function autoResize(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + 24 + "px";
+}
+
+function OgPreviewCard({ og }: { og: OgData }) {
+  return (
+    <a
+      href={og.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] overflow-hidden hover:bg-[#F5F1E8] transition-colors"
+    >
+      <div className="flex">
+        {og.image && (
+          <div className="w-24 h-24 flex-shrink-0 bg-[#EDE8DC]">
+            <img
+              src={og.image}
+              alt=""
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+          </div>
+        )}
+        <div className="flex-1 p-3 min-w-0">
+          <p className="text-xs font-medium text-[#1D1B18] line-clamp-2">{og.title}</p>
+          {og.description && <p className="text-xs text-[#6B6459] line-clamp-2 mt-1">{og.description}</p>}
+          <p className="text-xs text-[#A39C8C] mt-1 truncate">{og.siteName || new URL(og.url).hostname}</p>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+function MediaField({
+  index,
+  media,
+  disabled,
+  fileInputRefs,
+  onSelect,
+  onRemove,
+}: {
+  index: number;
+  media: PostMedia;
+  disabled: boolean;
+  fileInputRefs: { current: (HTMLInputElement | null)[] };
+  onSelect: (index: number, file: File | null) => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        ref={(el) => {
+          fileInputRefs.current[index] = el;
+        }}
+        type="file"
+        accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime"
+        onChange={(e) => onSelect(index, e.target.files?.[0] || null)}
+        className="hidden"
+      />
+
+      {media.status === "none" ? (
+        <button
+          type="button"
+          onClick={() => fileInputRefs.current[index]?.click()}
+          disabled={disabled}
+          className={addMediaLinkClass}
+        >
+          + Add image / video
+        </button>
+      ) : (
+        <div className="flex items-center gap-2 w-full">
+          {media.previewUrl && (
+            <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-[#E4DFD3] bg-[#FDFCF9] flex-shrink-0">
+              {media.mediaType === "VIDEO" ? (
+                <video src={media.previewUrl} className="w-full h-full object-cover" />
+              ) : (
+                <img src={media.previewUrl} alt="Preview" className="w-full h-full object-cover" />
+              )}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-[#6B6459] truncate">{media.fileName}</p>
+            {media.status === "uploading" && <p className="text-xs text-[#2F4468]">Uploading...</p>}
+            {media.status === "uploaded" && <p className="text-xs text-[#3F7857]">Uploaded</p>}
+            {media.status === "error" && <p className="text-xs text-[#B3261E]">{media.error}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={() => onRemove(index)}
+            disabled={disabled}
+            className={`${removeLinkClass} flex-shrink-0`}
+          >
+            Remove
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PostComposer({
+  index,
+  label,
+  post,
+  media,
+  charMin,
+  charMax,
+  og,
+  loadingOg,
+  disabled,
+  showRemove,
+  fileInputRefs,
+  onChange,
+  onRemove,
+  onFileSelect,
+  onRemoveMedia,
+}: {
+  index: number;
+  label: string;
+  post: string;
+  media: PostMedia;
+  charMin: number;
+  charMax: number;
+  og: OgData | null | undefined;
+  loadingOg: boolean | undefined;
+  disabled: boolean;
+  showRemove: boolean;
+  fileInputRefs: { current: (HTMLInputElement | null)[] };
+  onChange: (index: number, value: string) => void;
+  onRemove: (index: number) => void;
+  onFileSelect: (index: number, file: File | null) => void;
+  onRemoveMedia: (index: number) => void;
+}) {
+  const count = post.length;
+  const ratio = count / charMax;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <label className={eyebrowClass}>{label}</label>
+        {showRemove && (
+          <button type="button" onClick={() => onRemove(index)} disabled={disabled} className={removeLinkClass}>
+            Remove
+          </button>
+        )}
+      </div>
+
+      <MediaField
+        index={index}
+        media={media}
+        disabled={disabled}
+        fileInputRefs={fileInputRefs}
+        onSelect={onFileSelect}
+        onRemove={onRemoveMedia}
+      />
+
+      <textarea
+        value={post}
+        onChange={(e) => onChange(index, e.target.value)}
+        onInput={(e) => autoResize(e.currentTarget)}
+        placeholder={`${label}...`}
+        rows={3}
+        disabled={disabled}
+        className={postTextareaClass}
+      />
+
+      {loadingOg && <div className="text-xs text-[#A39C8C] animate-pulse">Loading preview...</div>}
+      {og && og.title && <OgPreviewCard og={og} />}
+
+      <div className="space-y-1">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-[#A39C8C]">Characters</span>
+          <span className={count < charMin || count > charMax ? "text-[#B3261E] font-medium" : "text-[#6B6459]"}>
+            {count} (min {charMin} / max {charMax})
+          </span>
+        </div>
+        <div className="h-1 w-full rounded-full bg-[#EDE8DC] overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-200 ${charBarColor(count, charMin, charMax)}`}
+            style={{ width: `${Math.min(ratio * 100, 100)}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function PostPage() {
@@ -93,11 +308,6 @@ export default function PostPage() {
     setMedia((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function autoResize(el: HTMLTextAreaElement) {
-    el.style.height = "auto";
-    el.style.height = el.scrollHeight + 24 + "px";
-  }
-
   const allPostsValid =
     posts.length > 0 &&
     charMin < charMax &&
@@ -124,28 +334,28 @@ export default function PostPage() {
         if (fetchedOgUrls.current.has(url)) return;
         fetchedOgUrls.current.add(url);
 
-          setOgLoading((prev) => {
+        setOgLoading((prev) => {
+          const next = [...prev];
+          next[i] = true;
+          return next;
+        });
+
+        try {
+          const res = await fetch(`/api/og?url=${encodeURIComponent(url)}`);
+          const data = await res.json();
+
+          if (data.image && !data.image.startsWith("/")) {
+            data.image = `/api/media/proxy?url=${encodeURIComponent(data.image)}`;
+          }
+
+          setOgData((prev) => {
             const next = [...prev];
-            next[i] = true;
+            next[i] = data;
             return next;
           });
-
-          try {
-            const res = await fetch(`/api/og?url=${encodeURIComponent(url)}`);
-            const data = await res.json();
-
-            if (data.image && !data.image.startsWith("/")) {
-              data.image = `/api/media/proxy?url=${encodeURIComponent(data.image)}`;
-            }
-
-            setOgData((prev) => {
-              const next = [...prev];
-              next[i] = data;
-              return next;
-            });
-          } catch {
-            fetchedOgUrls.current.delete(url);
-          } finally {
+        } catch {
+          fetchedOgUrls.current.delete(url);
+        } finally {
           setOgLoading((prev) => {
             const next = [...prev];
             next[i] = false;
@@ -346,7 +556,7 @@ export default function PostPage() {
         setAiStatus("error");
       }
     } catch {
-      setAiError("Network error – is the server running?");
+      setAiError("Network error. Check that the server is running.");
       setAiStatus("error");
     }
   }, [businessDescription, websiteUrl, tone]);
@@ -358,9 +568,7 @@ export default function PostPage() {
     setPublishMessage("");
 
     const mediaPayload = media.map((m) =>
-      m.status === "uploaded" && m.url && m.mediaType
-        ? { url: m.url, mediaType: m.mediaType }
-        : null
+      m.status === "uploaded" && m.url && m.mediaType ? { url: m.url, mediaType: m.mediaType } : null
     );
 
     const res = await fetch("/api/threads/publish", {
@@ -392,9 +600,7 @@ export default function PostPage() {
       const published = data.published?.length
         ? `\nPublished ${data.published.length} of ${posts.length} posts before failure.`
         : "";
-      setPublishMessage(
-        `${data.error || "Something went wrong"}${published}${details ? `\n${details}` : ""}`
-      );
+      setPublishMessage(`${data.error || "Something went wrong"}${published}${details ? `\n${details}` : ""}`);
     }
   }
 
@@ -406,467 +612,305 @@ export default function PostPage() {
   }
 
   return (
-    <main className="max-w-5xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Post to Threads</h1>
+    <main
+      className={`${fraunces.variable} ${inter.variable} ${plexMono.variable} min-h-screen bg-[#FAF8F2] [font-family:var(--font-body)]`}
+    >
+      <div className="max-w-5xl mx-auto p-6 space-y-8">
+        <header className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#B8862E] [font-family:var(--font-mono)]">
+            Composer
+          </p>
+          <h1 className="text-3xl font-semibold text-[#1D1B18] [font-family:var(--font-display)]">
+            Post to Threads
+          </h1>
+        </header>
 
-      <div className="grid lg:grid-cols-5 gap-6">
-        <section className="lg:col-span-2 rounded-xl border bg-white shadow-sm p-6 space-y-5 h-fit">
-          <h2 className="text-sm font-semibold">AI Generator</h2>
+        <div className="grid lg:grid-cols-5 gap-6">
+          <section className="lg:col-span-2 rounded-2xl border border-[#E4DFD3] bg-white shadow-sm p-6 space-y-5 h-fit">
+            <h2 className={eyebrowClass}>AI Generator</h2>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">What does your business do?</label>
-            <textarea
-              value={businessDescription}
-              onChange={(e) => setBusinessDescription(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. We sell organic coffee subscriptions..."
-              rows={2}
-              disabled={aiStatus === "generating"}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Target audience <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea
-              value={targetAudience}
-              onChange={(e) => setTargetAudience(e.target.value)}
-              placeholder="e.g. Freelancers, small business owners"
-              rows={2}
-              disabled={aiStatus === "generating"}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Main problem you solve <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea
-              value={mainProblem}
-              onChange={(e) => setMainProblem(e.target.value)}
-              placeholder="e.g. People waste time on manual scheduling"
-              rows={2}
-              disabled={aiStatus === "generating"}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Key features <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea
-              value={keyFeatures}
-              onChange={(e) => setKeyFeatures(e.target.value)}
-              placeholder="e.g. Auto-scheduling, analytics, team collaboration"
-              rows={2}
-              disabled={aiStatus === "generating"}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Website URL <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <textarea
-              value={websiteUrl}
-              onChange={(e) => setWebsiteUrl(e.target.value)}
-              placeholder="https://example.com"
-              rows={2}
-              disabled={aiStatus === "generating"}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical disabled:bg-gray-100"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Tone</label>
-            <div className="flex flex-wrap gap-2">
-              {TONES.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setTone(t.id)}
-                  disabled={aiStatus === "generating"}
-                  className={`rounded-full px-4 py-1.5 text-sm font-medium border transition-colors ${
-                    tone === t.id
-                      ? "bg-indigo-600 text-white border-indigo-600"
-                      : "bg-white text-gray-700 border-gray-300 hover:border-indigo-400 hover:text-indigo-600"
-                  } disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">Min characters: {charMin}</label>
-              <input
-                type="range"
-                min={SLIDER_MIN}
-                max={charMax - 10}
-                step={10}
-                value={charMin}
-                onChange={(e) => setCharMin(Number(e.target.value))}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#1D1B18]">What does your business do?</label>
+              <textarea
+                value={businessDescription}
+                onChange={(e) => setBusinessDescription(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="e.g. We sell organic coffee subscriptions..."
+                rows={2}
                 disabled={aiStatus === "generating"}
-                className="w-full accent-indigo-600"
+                className={textareaClass}
               />
             </div>
 
-            <div>
-              <label className="text-sm font-medium">Max characters: {charMax}</label>
-              <input
-                type="range"
-                min={charMin + 10}
-                max={SLIDER_MAX}
-                step={10}
-                value={charMax}
-                onChange={(e) => setCharMax(Number(e.target.value))}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#1D1B18]">
+                Target audience <span className="text-[#A39C8C] font-normal">(optional)</span>
+              </label>
+              <textarea
+                value={targetAudience}
+                onChange={(e) => setTargetAudience(e.target.value)}
+                placeholder="e.g. Freelancers, small business owners"
+                rows={2}
                 disabled={aiStatus === "generating"}
-                className="w-full accent-indigo-600"
+                className={textareaClass}
               />
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSavePrefs}
-              disabled={saveStatus === "saving" || prefsStatus === "loading"}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-1"
-            >
-              {saveStatus === "saving"
-                ? "Saving..."
-                : saveStatus === "saved"
-                  ? "Saved!"
-                  : "Save as Defaults"}
-            </button>
-
-            <button
-              onClick={handleGenerateAi}
-              disabled={aiStatus === "generating" || !businessDescription.trim()}
-              className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex-1"
-            >
-              {aiStatus === "generating" ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                  Generating...
-                </span>
-              ) : (
-                "Generate with AI"
-              )}
-            </button>
-          </div>
-
-          {aiStatus === "done" && (
-            <button
-              onClick={handleGenerateAi}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Regenerate
-            </button>
-          )}
-
-          {aiStatus === "generating" && (
-            <p className="text-xs text-gray-500 flex items-center gap-1.5">
-              <svg className="animate-pulse h-2.5 w-2.5 text-indigo-500" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="12" r="10" />
-              </svg>
-              Generating posts...
-            </p>
-          )}
-
-          {aiStatus === "error" && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
-              {aiError}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#1D1B18]">
+                Main problem you solve <span className="text-[#A39C8C] font-normal">(optional)</span>
+              </label>
+              <textarea
+                value={mainProblem}
+                onChange={(e) => setMainProblem(e.target.value)}
+                placeholder="e.g. People waste time on manual scheduling"
+                rows={2}
+                disabled={aiStatus === "generating"}
+                className={textareaClass}
+              />
             </div>
-          )}
-        </section>
 
-        <section className="lg:col-span-3 rounded-xl border bg-white shadow-sm p-6 space-y-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold">Post</h2>
-              {posts.length > 1 && (
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {posts.length - 1} repl{posts.length - 1 === 1 ? "y" : "ies"}
-                </p>
-              )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#1D1B18]">
+                Key features <span className="text-[#A39C8C] font-normal">(optional)</span>
+              </label>
+              <textarea
+                value={keyFeatures}
+                onChange={(e) => setKeyFeatures(e.target.value)}
+                placeholder="e.g. Auto-scheduling, analytics, team collaboration"
+                rows={2}
+                disabled={aiStatus === "generating"}
+                className={textareaClass}
+              />
             </div>
-          </div>
 
-          {posts.length > 0 && (() => {
-            const post = posts[0];
-            const count = post.length;
-            const ratio = count / charMax;
-            const og = ogData[0];
-            const loadingOg = ogLoading[0];
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#1D1B18]">
+                Website URL <span className="text-[#A39C8C] font-normal">(optional)</span>
+              </label>
+              <textarea
+                value={websiteUrl}
+                onChange={(e) => setWebsiteUrl(e.target.value)}
+                placeholder="https://example.com"
+                rows={2}
+                disabled={aiStatus === "generating"}
+                className={textareaClass}
+              />
+            </div>
 
-            return (
-              <div className="space-y-3 pb-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-gray-700">Post</label>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={(el) => { fileInputRefs.current[0] = el; }}
-                    type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime"
-                    onChange={(e) => handleFileSelect(0, e.target.files?.[0] || null)}
-                    className="hidden"
-                  />
-
-                  {media[0]?.status === "none" ? (
-                    <button
-                      type="button"
-                      onClick={() => fileInputRefs.current[0]?.click()}
-                      disabled={publishStatus === "publishing"}
-                      className="text-xs text-indigo-600 hover:text-indigo-700 font-medium disabled:text-gray-400"
-                    >
-                      + Add image / video
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2 w-full">
-                      {media[0].previewUrl && (
-                        <div className="relative w-14 h-14 rounded-lg overflow-hidden border bg-gray-50 flex-shrink-0">
-                          {media[0].mediaType === "VIDEO" ? (
-                            <video src={media[0].previewUrl} className="w-full h-full object-cover" />
-                          ) : (
-                            <img src={media[0].previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                          )}
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-gray-500 truncate">{media[0].fileName}</p>
-                        {media[0].status === "uploading" && <p className="text-xs text-indigo-500">Uploading...</p>}
-                        {media[0].status === "uploaded" && <p className="text-xs text-green-600">Uploaded</p>}
-                        {media[0].status === "error" && <p className="text-xs text-red-600">{media[0].error}</p>}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeMedia(0)}
-                        disabled={publishStatus === "publishing"}
-                        className="text-xs text-red-500 hover:text-red-600 disabled:text-gray-400 flex-shrink-0"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <textarea
-                  value={post}
-                  onChange={(e) => updatePost(0, e.target.value)}
-                  onInput={(e) => autoResize(e.currentTarget)}
-                  placeholder="Post..."
-                  rows={3}
-                  disabled={publishStatus === "publishing"}
-                  className="post-textarea w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100"
-                />
-
-                {loadingOg && <div className="text-xs text-gray-400 animate-pulse">Loading preview...</div>}
-
-                {og && og.title && (
-                  <a href={og.url} target="_blank" rel="noopener noreferrer" className="block rounded-lg border bg-gray-50 overflow-hidden hover:bg-gray-100 transition-colors">
-                    <div className="flex">
-                      {og.image && (
-                        <div className="w-24 h-24 flex-shrink-0 bg-gray-200">
-                          <img src={og.image} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-                        </div>
-                      )}
-                      <div className="flex-1 p-3 min-w-0">
-                        <p className="text-xs font-medium text-gray-900 line-clamp-2">{og.title}</p>
-                        {og.description && <p className="text-xs text-gray-500 line-clamp-2 mt-1">{og.description}</p>}
-                        <p className="text-xs text-gray-400 mt-1 truncate">{og.siteName || new URL(og.url).hostname}</p>
-                      </div>
-                    </div>
-                  </a>
-                )}
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Characters</span>
-                    <span className={count < charMin || count > charMax ? "text-red-600 font-medium" : "text-gray-500"}>{count} (min {charMin} / max {charMax})</span>
-                  </div>
-                  <div className="h-1 w-full rounded-full bg-gray-200 overflow-hidden">
-                    <div className={`h-full rounded-full transition-all duration-200 ${charBarColor(count, charMin, charMax)}`} style={{ width: `${Math.min(ratio * 100, 100)}%` }} />
-                  </div>
-                </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[#1D1B18]">Tone</label>
+              <div className="flex flex-wrap gap-2">
+                {TONES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTone(t.id)}
+                    disabled={aiStatus === "generating"}
+                    className={`rounded-full px-4 py-1.5 text-sm font-medium border transition-colors ${
+                      tone === t.id
+                        ? "bg-[#2F4468] text-white border-[#2F4468]"
+                        : "bg-white text-[#57534A] border-[#E4DFD3] hover:border-[#2F4468] hover:text-[#2F4468]"
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
-            );
-          })()}
+            </div>
 
-          {posts.length > 1 && (
-            <div className="ml-8 pl-4 border-l-2 border-gray-200 space-y-5">
-              {posts.slice(1).map((post, idx) => {
-                const i = idx + 1;
-                const count = post.length;
-                const ratio = count / charMax;
-                const og = ogData[i];
-                const loadingOg = ogLoading[i];
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-[#1D1B18]">Min characters: {charMin}</label>
+                <input
+                  type="range"
+                  min={SLIDER_MIN}
+                  max={charMax - 10}
+                  step={10}
+                  value={charMin}
+                  onChange={(e) => setCharMin(Number(e.target.value))}
+                  disabled={aiStatus === "generating"}
+                  className="w-full accent-[#2F4468]"
+                />
+              </div>
 
-                return (
-                  <div key={i} className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-gray-500">Reply {idx + 1}</label>
-                      <button
-                        type="button"
-                        onClick={() => removePost(i)}
+              <div>
+                <label className="text-sm font-medium text-[#1D1B18]">Max characters: {charMax}</label>
+                <input
+                  type="range"
+                  min={charMin + 10}
+                  max={SLIDER_MAX}
+                  step={10}
+                  value={charMax}
+                  onChange={(e) => setCharMax(Number(e.target.value))}
+                  disabled={aiStatus === "generating"}
+                  className="w-full accent-[#2F4468]"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSavePrefs}
+                disabled={saveStatus === "saving" || prefsStatus === "loading"}
+                className={`${secondaryButtonClass} flex-1`}
+              >
+                {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved!" : "Save as Defaults"}
+              </button>
+
+              <button
+                onClick={handleGenerateAi}
+                disabled={aiStatus === "generating" || !businessDescription.trim()}
+                className="rounded-xl bg-[#B8862E] px-5 py-2 text-sm font-medium text-white hover:bg-[#9C7226] disabled:bg-[#D8C9A8] disabled:cursor-not-allowed transition-colors flex-1"
+              >
+                {aiStatus === "generating" ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    Generating...
+                  </span>
+                ) : (
+                  "Generate with AI"
+                )}
+              </button>
+            </div>
+
+            {aiStatus === "done" && (
+              <button onClick={handleGenerateAi} className={`${secondaryButtonClass} w-full`}>
+                Regenerate
+              </button>
+            )}
+
+            {aiStatus === "generating" && (
+              <p className="text-xs text-[#6B6459] flex items-center gap-1.5">
+                <svg className="animate-pulse h-2.5 w-2.5 text-[#B8862E]" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="12" r="10" />
+                </svg>
+                Generating posts...
+              </p>
+            )}
+
+            {aiStatus === "error" && (
+              <div className="rounded-xl bg-[#FBEAE8] border border-[#F0C4BF] px-3 py-2 text-xs text-[#8A2A22]">
+                {aiError}
+              </div>
+            )}
+          </section>
+
+          <section className="lg:col-span-3 rounded-2xl border border-[#E4DFD3] bg-white shadow-sm p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className={eyebrowClass}>Composer</h2>
+                {posts.length > 1 && (
+                  <p className="text-xs text-[#A39C8C] mt-0.5">
+                    {posts.length - 1} repl{posts.length - 1 === 1 ? "y" : "ies"}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {posts.length > 0 && (
+              <PostComposer
+                index={0}
+                label="Post"
+                post={posts[0]}
+                media={media[0] ?? { status: "none" }}
+                charMin={charMin}
+                charMax={charMax}
+                og={ogData[0]}
+                loadingOg={ogLoading[0]}
+                disabled={publishStatus === "publishing"}
+                showRemove={false}
+                fileInputRefs={fileInputRefs}
+                onChange={updatePost}
+                onRemove={removePost}
+                onFileSelect={handleFileSelect}
+                onRemoveMedia={removeMedia}
+              />
+            )}
+
+            {posts.length > 1 && (
+              <div className="relative ml-3 pl-7 space-y-6 before:content-[''] before:absolute before:left-0 before:top-1 before:bottom-1 before:border-l-2 before:border-dotted before:border-[#B8862E]/50">
+                {posts.slice(1).map((post, idx) => {
+                  const i = idx + 1;
+                  return (
+                    <div key={i} className="relative">
+                      <span className="absolute -left-7 top-1 w-2.5 h-2.5 rounded-full bg-[#B8862E] ring-4 ring-[#FAF8F2]" />
+                      <PostComposer
+                        index={i}
+                        label={`Reply ${idx + 1}`}
+                        post={post}
+                        media={media[i] ?? { status: "none" }}
+                        charMin={charMin}
+                        charMax={charMax}
+                        og={ogData[i]}
+                        loadingOg={ogLoading[i]}
                         disabled={publishStatus === "publishing"}
-                        className="text-xs text-red-500 hover:text-red-600 disabled:text-gray-400 disabled:cursor-not-allowed"
-                      >
-                        Remove
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <input
-                        ref={(el) => { fileInputRefs.current[i] = el; }}
-                        type="file"
-                        accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime"
-                        onChange={(e) => handleFileSelect(i, e.target.files?.[0] || null)}
-                        className="hidden"
+                        showRemove
+                        fileInputRefs={fileInputRefs}
+                        onChange={updatePost}
+                        onRemove={removePost}
+                        onFileSelect={handleFileSelect}
+                        onRemoveMedia={removeMedia}
                       />
-
-                      {media[i]?.status === "none" ? (
-                        <button
-                          type="button"
-                          onClick={() => fileInputRefs.current[i]?.click()}
-                          disabled={publishStatus === "publishing"}
-                          className="text-xs text-indigo-600 hover:text-indigo-700 font-medium disabled:text-gray-400"
-                        >
-                          + Add image / video
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-2 w-full">
-                          {media[i].previewUrl && (
-                            <div className="relative w-14 h-14 rounded-lg overflow-hidden border bg-gray-50 flex-shrink-0">
-                              {media[i].mediaType === "VIDEO" ? (
-                                <video src={media[i].previewUrl} className="w-full h-full object-cover" />
-                              ) : (
-                                <img src={media[i].previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                              )}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-gray-500 truncate">{media[i].fileName}</p>
-                            {media[i].status === "uploading" && <p className="text-xs text-indigo-500">Uploading...</p>}
-                            {media[i].status === "uploaded" && <p className="text-xs text-green-600">Uploaded</p>}
-                            {media[i].status === "error" && <p className="text-xs text-red-600">{media[i].error}</p>}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeMedia(i)}
-                            disabled={publishStatus === "publishing"}
-                            className="text-xs text-red-500 hover:text-red-600 disabled:text-gray-400 flex-shrink-0"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      )}
                     </div>
+                  );
+                })}
+              </div>
+            )}
 
-                    <textarea
-                      value={post}
-                      onChange={(e) => updatePost(i, e.target.value)}
-                      onInput={(e) => autoResize(e.currentTarget)}
-                      placeholder={`Reply ${idx + 1}...`}
-                      rows={3}
-                      disabled={publishStatus === "publishing"}
-                      className="post-textarea w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100"
-                    />
+            <button
+              onClick={handlePublish}
+              disabled={publishStatus === "publishing" || !allPostsValid}
+              className="rounded-xl bg-[#1D1B18] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#2F4468] disabled:bg-[#C9C3B5] disabled:cursor-not-allowed transition-colors w-full"
+            >
+              {publishStatus === "publishing" ? "Publishing thread..." : "Publish Thread to Threads"}
+            </button>
 
-                    {loadingOg && <div className="text-xs text-gray-400 animate-pulse">Loading preview...</div>}
+            {publishStatus === "success" && (
+              <div className="rounded-xl bg-[#EDF4EE] border border-[#BFE0C4] px-4 py-3 text-sm text-[#2F6B45]">
+                {publishMessage}
+              </div>
+            )}
 
-                    {og && og.title && (
-                      <a href={og.url} target="_blank" rel="noopener noreferrer" className="block rounded-lg border bg-gray-50 overflow-hidden hover:bg-gray-100 transition-colors">
-                        <div className="flex">
-                          {og.image && (
-                            <div className="w-24 h-24 flex-shrink-0 bg-gray-200">
-                              <img src={og.image} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-                            </div>
-                          )}
-                          <div className="flex-1 p-3 min-w-0">
-                            <p className="text-xs font-medium text-gray-900 line-clamp-2">{og.title}</p>
-                            {og.description && <p className="text-xs text-gray-500 line-clamp-2 mt-1">{og.description}</p>}
-                            <p className="text-xs text-gray-400 mt-1 truncate">{og.siteName || new URL(og.url).hostname}</p>
-                          </div>
-                        </div>
-                      </a>
-                    )}
-
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-gray-400">Characters</span>
-                        <span className={count < charMin || count > charMax ? "text-red-600 font-medium" : "text-gray-500"}>{count} (min {charMin} / max {charMax})</span>
-                      </div>
-                      <div className="h-1 w-full rounded-full bg-gray-200 overflow-hidden">
-                        <div className={`h-full rounded-full transition-all duration-200 ${charBarColor(count, charMin, charMax)}`} style={{ width: `${Math.min(ratio * 100, 100)}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <button
-            onClick={handlePublish}
-            disabled={publishStatus === "publishing" || !allPostsValid}
-            className="rounded-lg bg-black px-6 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors w-full"
-          >
-            {publishStatus === "publishing" ? "Publishing thread..." : "Publish Thread to Threads"}
-          </button>
-
-          {publishStatus === "success" && (
-            <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
-              {publishMessage}
-            </div>
-          )}
-
-          {publishStatus === "error" && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 whitespace-pre-wrap">
-              {publishMessage}
-            </div>
-          )}
-        </section>
-      </div>
-
-      <details className="rounded-xl border bg-white shadow-sm">
-        <summary className="cursor-pointer px-6 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 select-none">
-          Diagnostics
-        </summary>
-        <div className="px-6 pb-4 space-y-3">
-          <button
-            onClick={async () => {
-              setChecking(true);
-              setDiagnostic(null);
-              const res = await fetch("/api/threads/check");
-              const data = await res.json();
-              setDiagnostic(data);
-              setChecking(false);
-            }}
-            disabled={checking}
-            className="rounded-lg bg-gray-500 px-4 py-2 text-sm font-medium text-white hover:bg-gray-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-          >
-            {checking ? "Checking..." : "Check Connection"}
-          </button>
-
-          {diagnostic && (
-            <pre className="rounded-lg border bg-gray-50 p-3 text-xs overflow-auto max-h-96">
-              {JSON.stringify(diagnostic, null, 2)}
-            </pre>
-          )}
+            {publishStatus === "error" && (
+              <div className="rounded-xl bg-[#FBEAE8] border border-[#F0C4BF] px-4 py-3 text-sm text-[#8A2A22] whitespace-pre-wrap">
+                {publishMessage}
+              </div>
+            )}
+          </section>
         </div>
-      </details>
+
+        <details className="rounded-2xl border border-[#E4DFD3] bg-white shadow-sm">
+          <summary className="cursor-pointer px-6 py-3 text-sm font-medium text-[#57534A] hover:text-[#1D1B18] select-none">
+            Diagnostics
+          </summary>
+          <div className="px-6 pb-4 space-y-3">
+            <button
+              onClick={async () => {
+                setChecking(true);
+                setDiagnostic(null);
+                const res = await fetch("/api/threads/check");
+                const data = await res.json();
+                setDiagnostic(data);
+                setChecking(false);
+              }}
+              disabled={checking}
+              className="rounded-xl bg-[#57534A] px-4 py-2 text-sm font-medium text-white hover:bg-[#3F3B33] disabled:bg-[#C9C3B5] disabled:cursor-not-allowed transition-colors"
+            >
+              {checking ? "Checking..." : "Check Connection"}
+            </button>
+
+            {diagnostic && (
+              <pre className="rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] p-3 text-xs overflow-auto max-h-96 [font-family:var(--font-mono)]">
+                {JSON.stringify(diagnostic, null, 2)}
+              </pre>
+            )}
+          </div>
+        </details>
+      </div>
     </main>
   );
 }

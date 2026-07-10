@@ -1,36 +1,102 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Post Drive
 
-## Getting Started
+AI-powered content creation for [Threads](https://www.threads.net). Describe your business, pick a tone, and let AI generate threaded posts that sound like a real person — not a brand. Edit, add media, and publish directly to Threads via the Meta Graph API.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **AI thread generation** — Uses OpenAI GPT-4o-mini to generate 2–4 post threads in your choice of tone (Rage Bait, Hot Take, Storytelling, Educational)
+- **Character limit control** — Adjustable min/max per post (30–500 characters)
+- **Business context** — Add your website, target audience, key features, and main problem so the AI writes on-brand content
+- **Open Graph previews** — Paste a URL and see an automatic link preview
+- **Media uploads** — Attach images or video to any post in the thread
+- **One-click publishing** — Publish the full thread to Threads via the Meta Graph API
+- **Persistent preferences** — Your tone, character limits, and business context are saved per account
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Language | TypeScript |
+| Styling | Tailwind CSS v4 |
+| AI | OpenAI GPT-4o-mini via Vercel AI SDK |
+| Database | Supabase (Postgres) |
+| Auth | Threads (Meta) OAuth |
+| Package Manager | pnpm |
+
+## Prerequisites
+
+- Node.js 20+
+- [pnpm](https://pnpm.io/installation)
+- A [Supabase](https://supabase.com) project
+- A [Meta App](https://developers.facebook.com) with Threads API enabled
+- An [OpenAI API key](https://platform.openai.com/api-keys)
+- [ngrok](https://ngrok.com) (for local development with Threads OAuth)
+
+## Environment Variables
+
+Copy the following into `.env.local`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+THREADS_APP_ID=your-threads-app-id
+THREADS_APP_SECRET=your-threads-app-secret
+THREADS_REDIRECT_URI=https://your-ngrok-domain.ngrok-free.dev/api/auth/threads/callback
+
+NEXT_PUBLIC_THREADS_APP_ID=your-threads-app-id
+NEXT_PUBLIC_THREADS_REDIRECT_URI=https://your-ngrok-domain.ngrok-free.dev/api/auth/threads/callback
+
+OPENAI_API_KEY=sk-...
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Database Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Run the migration files in `scripts/` to create the required Supabase tables (`threads_accounts` and `user_preferences`).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Development
 
-## Learn More
+### 1. Start the dev server
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The app runs at [http://localhost:3000](http://localhost:3000).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 2. Start ngrok
 
-## Deploy on Vercel
+Threads OAuth requires a public HTTPS callback URL. Start ngrok pointing at your local server:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+ngrok http 3000
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Copy the generated `https://<your-subdomain>.ngrok-free.dev` URL.
+
+### 3. Update environment
+
+Set `THREADS_REDIRECT_URI` and `NEXT_PUBLIC_THREADS_REDIRECT_URI` in `.env.local` to your ngrok URL (e.g., `https://your-subdomain.ngrok-free.dev/api/auth/threads/callback`). Also add the ngrok origin to `allowedDevOrigins` in `next.config.ts`.
+
+### 4. Configure Meta App
+
+In the Meta App Dashboard, set the **OAuth redirect URI** to `https://your-subdomain.ngrok-free.dev/api/auth/threads/callback`.
+
+### 5. Open the app
+
+Visit your ngrok URL in a browser. Navigate to `/connect` to authenticate with Threads, then `/post` to start creating.
+
+## Scripts
+
+| Command | Description |
+|---|---|
+| `pnpm dev` | Start development server |
+| `pnpm build` | Build for production |
+| `pnpm start` | Start production server |
+| `pnpm lint` | Run ESLint |
+
+## Deployment
+
+Deploy to any Node.js hosting platform (Vercel, Railway, etc.). Set all environment variables in production and update the Threads OAuth redirect URI to your production domain.
