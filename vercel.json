@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/auto-post",
-      "schedule": "0 14 * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/refresh-token",
