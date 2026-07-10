@@ -14,12 +14,15 @@ export async function GET(req: NextRequest) {
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "true";
 
   const currentHour = new Date().getUTCHours();
+  const postHour = Number(process.env.CRON_POST_HOUR || "14");
+  if (currentHour !== postHour) {
+    return NextResponse.json({ message: `Skipping — post hour is ${postHour} UTC, current hour is ${currentHour}` });
+  }
 
   const { data: accounts } = await getSupabase()
     .from("threads_accounts")
     .select("*")
-    .eq("is_enabled", true)
-    .eq("post_hour_utc", currentHour);
+    .eq("is_enabled", true);
 
   if (!accounts || accounts.length === 0) {
     return NextResponse.json({ message: "No enabled accounts" });

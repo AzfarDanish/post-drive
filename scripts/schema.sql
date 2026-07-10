@@ -46,7 +46,6 @@ create table threads_accounts (
 
     token_expires_at timestamptz,
     is_enabled boolean not null default false,
-    post_hour_utc int not null default 14,
     last_posted_at timestamptz,
 
     user_id uuid references users(id)
