@@ -13,10 +13,13 @@ export async function GET(req: NextRequest) {
 
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "true";
 
+  const currentHour = new Date().getUTCHours();
+
   const { data: accounts } = await getSupabase()
     .from("threads_accounts")
     .select("*")
-    .eq("is_enabled", true);
+    .eq("is_enabled", true)
+    .eq("post_hour_utc", currentHour);
 
   if (!accounts || accounts.length === 0) {
     return NextResponse.json({ message: "No enabled accounts" });
