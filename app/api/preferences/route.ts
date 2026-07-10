@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 const VALID_TONES = ["rage-bait", "hot-take", "storytelling", "educational"];
 
 export async function GET() {
-  const { data: account, error: queryError } = await supabase
+  const { data: account, error: queryError } = await getSupabase()
     .from("threads_accounts")
     .select("id")
     .order("created_at", { ascending: false })
@@ -18,7 +18,7 @@ export async function GET() {
     );
   }
 
-  const { data: prefs } = await supabase
+  const { data: prefs } = await getSupabase()
     .from("user_preferences")
     .select("*")
     .eq("threads_account_id", account.id)
@@ -51,7 +51,7 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const { data: account, error: queryError } = await supabase
+  const { data: account, error: queryError } = await getSupabase()
     .from("threads_accounts")
     .select("id")
     .order("created_at", { ascending: false })
@@ -92,7 +92,7 @@ export async function PUT(req: NextRequest) {
   const key_features =
     typeof body.key_features === "string" ? body.key_features : "";
 
-  const { data: prefs, error: upsertError } = await supabase
+  const { data: prefs, error: upsertError } = await getSupabase()
     .from("user_preferences")
     .upsert(
       {

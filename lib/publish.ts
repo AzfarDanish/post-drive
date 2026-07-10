@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 export interface ThreadsAccount {
   threads_user_id: string;
@@ -22,7 +22,7 @@ export async function publishToThreads(
   posts: string[],
   media?: (PostMedia | null)[]
 ): Promise<PublishResult> {
-  const { data: account, error: queryError } = await supabase
+  const { data: account, error: queryError } = await getSupabase()
     .from("threads_accounts")
     .select("threads_user_id, access_token")
     .order("created_at", { ascending: false })

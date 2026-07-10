@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 async function safeJson(res: Response): Promise<{ ok: boolean; data: unknown }> {
   const text = await res.text();
@@ -114,7 +114,7 @@ export async function GET(req: NextRequest) {
   const threadsUserId =
     (meData as Record<string, unknown>)?.id || user_id;
 
-  const { error: insertError } = await supabase
+  const { error: insertError } = await getSupabase()
     .from("threads_accounts")
     .insert({
       threads_user_id: threadsUserId,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { data: account } = await supabase
+  const { data: account } = await getSupabase()
     .from("threads_accounts")
     .select("*")
     .order("created_at", { ascending: false })
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 
       const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-      await supabase
+      await getSupabase()
         .from("threads_accounts")
         .update({
           access_token: newToken,

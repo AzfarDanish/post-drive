@@ -1,7 +1,7 @@
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 export default async function NavAccountStatus() {
-  const { data } = await supabase
+  const { data } = await getSupabase()
     .from("threads_accounts")
     .select("threads_user_id")
     .order("created_at", { ascending: false })

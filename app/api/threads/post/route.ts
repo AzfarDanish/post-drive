@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   const { text } = await req.json();
@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "text is required" }, { status: 400 });
   }
 
-  const { data: account, error: queryError } = await supabase
+  const { data: account, error: queryError } = await getSupabase()
     .from("threads_accounts")
     .select("threads_user_id, access_token")
     .order("created_at", { ascending: false })

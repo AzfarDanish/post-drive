@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import { generateAndProcessPosts } from "@/lib/generate";
 import { publishToThreads } from "@/lib/publish";
 import type { Tone } from "@/lib/ai";
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "true";
 
-  const { data: account } = await supabase
+  const { data: account } = await getSupabase()
     .from("threads_accounts")
     .select("*")
     .order("created_at", { ascending: false })
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: "Auto-post is disabled" });
   }
 
-  const { data: prefs } = await supabase
+  const { data: prefs } = await getSupabase()
     .from("user_preferences")
     .select("*")
     .eq("threads_account_id", account.id)
@@ -58,21 +58,21 @@ export async function GET(req: NextRequest) {
         result = await publishToThreads(posts);
       }
 
-      await supabase.from("post_log").insert({
+      await getSupabase().from("post_log").insert({
         posts: JSON.parse(JSON.stringify(posts)),
         was_published: result.success,
         error: result.success ? null : result.error || null,
       });
 
       if (result.success) {
-        await supabase
+        await getSupabase()
           .from("threads_accounts")
           .update({ last_posted_at: new Date().toISOString() })
           .eq("id", account.id);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      await supabase.from("post_log").insert({
+      await getSupabase().from("post_log").insert({
         posts: [],
         was_published: false,
         error: message,
