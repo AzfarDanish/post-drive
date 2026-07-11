@@ -6,6 +6,7 @@ import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
 import { useAuth } from "@/components/auth-provider";
 import { useAccounts } from "@/hooks/use-accounts";
 import { usePreferences } from "@/hooks/use-preferences";
+import type { Preferences } from "@/hooks/use-preferences";
 import { AiGeneratorPanel, type GenerateParams } from "@/components/ai-generator-panel";
 
 const fraunces = Fraunces({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-display" });
@@ -311,21 +312,12 @@ export default function PostPage() {
     });
   }, [post]);
 
-  async function handleSavePrefs() {
+  async function handleSavePrefs(prefs: Partial<Preferences>) {
     if (!activeAccountId) return;
     const res = await fetch(`/api/preferences?account_id=${activeAccountId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        default_tone: preferences?.default_tone ?? "rage-bait",
-        business_description: preferences?.business_description ?? "",
-        website_url: preferences?.website_url ?? "",
-        char_min: preferences?.char_min ?? 240,
-        char_max: preferences?.char_max ?? 480,
-        target_audience: preferences?.target_audience ?? "",
-        main_problem: preferences?.main_problem ?? "",
-        key_features: preferences?.key_features ?? "",
-      }),
+      body: JSON.stringify(prefs),
     });
     if (!res.ok) throw new Error("Failed to save");
   }

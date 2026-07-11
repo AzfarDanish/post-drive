@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type KeyboardEvent } from "react";
+import { useState, useRef, type KeyboardEvent } from "react";
 import type { Preferences } from "@/hooks/use-preferences";
 
 type Tone = "rage-bait" | "hot-take" | "storytelling" | "educational";
@@ -78,6 +78,19 @@ export function AiGeneratorPanel({
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+
+  const prevPrefsRef = useRef(preferences);
+  if (preferences !== prevPrefsRef.current) {
+    prevPrefsRef.current = preferences;
+    setBusinessDescription(preferences?.business_description ?? "");
+    setTargetAudience(preferences?.target_audience ?? "");
+    setMainProblem(preferences?.main_problem ?? "");
+    setKeyFeatures(preferences?.key_features ?? "");
+    setWebsiteUrl(preferences?.website_url ?? "");
+    setTone((preferences?.default_tone as Tone) ?? "rage-bait");
+    setCharMin(preferences?.char_min ?? 240);
+    setCharMax(preferences?.char_max ?? 480);
+  }
 
   function handleKeyDown(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
