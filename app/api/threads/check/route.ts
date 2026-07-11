@@ -17,7 +17,8 @@ export async function GET() {
   const { data: accounts } = await supabase
     .from("threads_accounts")
     .select("id, threads_user_id, access_token")
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
 
   if (!accounts || accounts.length === 0) {
     return NextResponse.json({
