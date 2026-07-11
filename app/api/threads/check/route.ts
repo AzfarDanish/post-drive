@@ -21,11 +21,18 @@ export async function GET() {
     .order("created_at", { ascending: false });
 
   if (!accounts || accounts.length === 0) {
-    return NextResponse.json({
-      connected: false,
-      accounts: [],
-      message: "No connected Threads accounts found. Connect at /connect",
-    });
+    return NextResponse.json(
+      {
+        connected: false,
+        accounts: [],
+        message: "No connected Threads accounts found. Connect at /connect",
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=30, stale-while-revalidate=120",
+        },
+      }
+    );
   }
 
   const results = await Promise.all(
@@ -55,5 +62,12 @@ export async function GET() {
     })
   );
 
-  return NextResponse.json({ connected: true, accounts: results });
+  return NextResponse.json(
+    { connected: true, accounts: results },
+    {
+      headers: {
+        "Cache-Control": "private, max-age=30, stale-while-revalidate=120",
+      },
+    }
+  );
 }

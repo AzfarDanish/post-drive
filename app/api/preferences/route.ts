@@ -3,6 +3,17 @@ import { createClient } from "@/lib/supabase/server";
 
 const VALID_TONES = ["rage-bait", "hot-take", "storytelling", "educational"];
 
+const DEFAULT_PREFS = {
+  default_tone: "rage-bait" as const,
+  business_description: "",
+  website_url: "",
+  char_min: 240,
+  char_max: 480,
+  target_audience: "",
+  main_problem: "",
+  key_features: "",
+};
+
 export async function GET(req: NextRequest) {
   const accountId = req.nextUrl.searchParams.get("account_id");
 
@@ -15,32 +26,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const query = supabase
-    .from("threads_accounts")
-    .select("id")
-    .eq("user_id", user.id);
-
   if (accountId) {
-    query.eq("id", accountId);
+    const { data: prefs } = await supabase
+      .from("user_preferences")
+      .select("*")
+      .eq("threads_account_id", accountId)
+      .maybeSingle();
+    return NextResponse.json(prefs ?? DEFAULT_PREFS);
   }
 
-  const { data: account } = await query
+  const { data: account } = await supabase
+    .from("threads_accounts")
+    .select("id")
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
   if (!account) {
-    const defaultPrefs = {
-      default_tone: "rage-bait",
-      business_description: "",
-      website_url: "",
-      char_min: 240,
-      char_max: 480,
-      target_audience: "",
-      main_problem: "",
-      key_features: "",
-    };
-    return NextResponse.json(defaultPrefs);
+    return NextResponse.json(DEFAULT_PREFS);
   }
 
   const { data: prefs } = await supabase
@@ -49,30 +53,7 @@ export async function GET(req: NextRequest) {
     .eq("threads_account_id", account.id)
     .maybeSingle();
 
-  if (!prefs) {
-    const defaultPrefs = {
-      default_tone: "rage-bait",
-      business_description: "",
-      website_url: "",
-      char_min: 240,
-      char_max: 480,
-      target_audience: "",
-      main_problem: "",
-      key_features: "",
-    };
-    return NextResponse.json(defaultPrefs);
-  }
-
-  return NextResponse.json({
-    default_tone: prefs.default_tone,
-    business_description: prefs.business_description,
-    website_url: prefs.website_url,
-    char_min: prefs.char_min,
-    char_max: prefs.char_max,
-    target_audience: prefs.target_audience,
-    main_problem: prefs.main_problem,
-    key_features: prefs.key_features,
-  });
+  return NextResponse.json(prefs ?? DEFAULT_PREFS);
 }
 
 export async function PUT(req: NextRequest) {
@@ -87,32 +68,51 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const query = supabase
-    .from("threads_accounts")
-    .select("id")
-    .eq("user_id", user.id);
+  if (!accountId) {
+    const { data: account } = await supabase
+      .from("threads_accounts")
+      .select("id")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (accountId) {
-    query.eq("id", accountId);
+    if (!account) {
+      return NextResponse.json(
+        { error: "No connected Threads account found" },
+        { status: 404 }
+      );
+    }
+
+    return handleUpsert(supabase, account.id, await req.json());
   }
 
-  const { data: account } = await query
-    .order("created_at", { ascending: false })
-    .limit(1)
+  const { data: account } = await supabase
+    .from("threads_accounts")
+    .select("id")
+    .eq("id", accountId)
+    .eq("user_id", user.id)
     .maybeSingle();
 
   if (!account) {
     return NextResponse.json(
-      { error: "No connected Threads account found" },
+      { error: "Threads account not found" },
       { status: 404 }
     );
   }
 
-  const body = await req.json();
+  return handleUpsert(supabase, account.id, await req.json());
+}
+
+async function handleUpsert(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  threadsAccountId: string,
+  body: Record<string, unknown>
+) {
+  const rawTone = body.default_tone;
   const default_tone =
-    typeof body.default_tone === "string" &&
-    VALID_TONES.includes(body.default_tone)
-      ? body.default_tone
+    typeof rawTone === "string" && VALID_TONES.includes(rawTone)
+      ? rawTone
       : "rage-bait";
   const business_description =
     typeof body.business_description === "string"
@@ -120,14 +120,14 @@ export async function PUT(req: NextRequest) {
       : "";
   const website_url =
     typeof body.website_url === "string" ? body.website_url : "";
-  const char_min =
-    typeof body.char_min === "number" && body.char_min >= 30 && body.char_min < body.char_max
-      ? body.char_min
-      : 240;
-  const char_max =
-    typeof body.char_max === "number" && body.char_max <= 500 && body.char_max > (typeof body.char_min === "number" ? body.char_min : 240)
-      ? body.char_max
-      : 480;
+
+  const rawCharMin = body.char_min;
+  const rawCharMax = body.char_max;
+  const parsedMin = typeof rawCharMin === "number" ? rawCharMin : 240;
+  const parsedMax = typeof rawCharMax === "number" ? rawCharMax : 480;
+  const char_min = parsedMin >= 30 && parsedMin < parsedMax ? parsedMin : 240;
+  const char_max = parsedMax <= 500 && parsedMax > parsedMin ? parsedMax : 480;
+
   const target_audience =
     typeof body.target_audience === "string" ? body.target_audience : "";
   const main_problem =
@@ -139,7 +139,7 @@ export async function PUT(req: NextRequest) {
     .from("user_preferences")
     .upsert(
       {
-        threads_account_id: account.id,
+        threads_account_id: threadsAccountId,
         default_tone,
         business_description,
         website_url,

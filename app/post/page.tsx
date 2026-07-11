@@ -1,22 +1,16 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, type KeyboardEvent } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import { useRouter } from "next/navigation";
 import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
 import { useAuth } from "@/components/auth-provider";
+import { useAccounts } from "@/hooks/use-accounts";
+import { usePreferences } from "@/hooks/use-preferences";
+import { AiGeneratorPanel, type GenerateParams } from "@/components/ai-generator-panel";
 
 const fraunces = Fraunces({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-display" });
 const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-body" });
 const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-mono" });
-
-type Tone = "rage-bait" | "hot-take" | "storytelling" | "educational";
-
-const TONES: { id: Tone; label: string }[] = [
-  { id: "rage-bait", label: "Rage Bait" },
-  { id: "hot-take", label: "Hot Take" },
-  { id: "storytelling", label: "Storytelling" },
-  { id: "educational", label: "Educational" },
-];
 
 interface PostMedia {
   status: "none" | "uploading" | "uploaded" | "error";
@@ -35,19 +29,8 @@ interface OgData {
   siteName: string | null;
 }
 
-const SLIDER_MIN = 30;
-const SLIDER_MAX = 500;
-
-// Shared style tokens. Kept as plain strings so every field, card, and
-// button pulls from one place instead of re-typing the same class list.
-const textareaClass =
-  "w-full rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] px-3 py-2 text-sm text-[#1D1B18] placeholder:text-[#A39C8C] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468] resize-vertical disabled:bg-[#F1EEE6] disabled:text-[#A39C8C] transition-colors";
-
 const postTextareaClass =
   "post-textarea w-full rounded-xl border border-[#E4DFD3] bg-white px-3 py-2.5 text-sm text-[#1D1B18] placeholder:text-[#A39C8C] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468] disabled:bg-[#F1EEE6] transition-colors";
-
-const secondaryButtonClass =
-  "rounded-xl border border-[#E4DFD3] px-4 py-2 text-sm font-medium text-[#57534A] hover:bg-[#F1EEE6] hover:text-[#1D1B18] disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 
 const removeLinkClass =
   "text-xs text-[#B3261E] hover:text-[#8A2A22] disabled:text-[#B8B2A3] disabled:cursor-not-allowed transition-colors";
@@ -112,7 +95,7 @@ function OgPreviewCard({ og }: { og: OgData }) {
   );
 }
 
-function MediaField({
+const MediaField = memo(function MediaField({
   media,
   disabled,
   fileInputRef,
@@ -173,9 +156,9 @@ function MediaField({
       )}
     </div>
   );
-}
+});
 
-function PostComposer({
+const PostComposer = memo(function PostComposer({
   label,
   post,
   media,
@@ -246,24 +229,16 @@ function PostComposer({
       </div>
     </div>
   );
-}
+});
 
 export default function PostPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+
   const [post, setPost] = useState("");
   const [media, setMedia] = useState<PostMedia>({ status: "none" });
 
-  const [businessDescription, setBusinessDescription] = useState("");
-  const [targetAudience, setTargetAudience] = useState("");
-  const [mainProblem, setMainProblem] = useState("");
-  const [keyFeatures, setKeyFeatures] = useState("");
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [tone, setTone] = useState<Tone>("rage-bait");
-  const [charMin, setCharMin] = useState(240);
-  const [charMax, setCharMax] = useState(480);
-  const [prefsStatus, setPrefsStatus] = useState<"loading" | "loaded" | "error">("loading");
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
 
   const [aiStatus, setAiStatus] = useState<"idle" | "generating" | "done" | "error">("idle");
   const [aiError, setAiError] = useState("");
@@ -280,8 +255,12 @@ export default function PostPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fetchedOgUrls = useRef<Set<string>>(new Set());
 
-  const [connAccounts, setConnAccounts] = useState<{ id: string; threads_user_id: string; username?: string | null }[]>([]);
-  const [activeAccountId, setActiveAccountId] = useState<string | null>(null);
+  const { accounts } = useAccounts();
+  const {
+    preferences,
+    loading: prefsLoading,
+    validating: prefsValidating,
+  } = usePreferences(activeAccountId);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -289,19 +268,9 @@ export default function PostPage() {
     }
   }, [user, authLoading, router]);
 
-  useEffect(() => {
-    async function loadAccounts() {
-      try {
-        const res = await fetch("/api/threads/check");
-        const data = await res.json();
-        if (data.accounts?.length) {
-          setConnAccounts(data.accounts);
-          setActiveAccountId(data.accounts[0].id);
-        }
-      } catch {}
-    }
-    if (user) loadAccounts();
-  }, [user]);
+  if (accounts.length > 0 && !activeAccountId) {
+    setActiveAccountId(accounts[0].id);
+  }
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -342,70 +311,100 @@ export default function PostPage() {
     });
   }, [post]);
 
-  async function loadPrefs(accountId?: string) {
-    setPrefsStatus("loading");
+  async function handleSavePrefs() {
+    if (!activeAccountId) return;
+    const res = await fetch(`/api/preferences?account_id=${activeAccountId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        default_tone: preferences?.default_tone ?? "rage-bait",
+        business_description: preferences?.business_description ?? "",
+        website_url: preferences?.website_url ?? "",
+        char_min: preferences?.char_min ?? 240,
+        char_max: preferences?.char_max ?? 480,
+        target_audience: preferences?.target_audience ?? "",
+        main_problem: preferences?.main_problem ?? "",
+        key_features: preferences?.key_features ?? "",
+      }),
+    });
+    if (!res.ok) throw new Error("Failed to save");
+  }
+
+  async function handleGenerateAi(params: GenerateParams) {
+    setAiStatus("generating");
+    setAiError("");
+
     try {
-      const url = accountId
-        ? `/api/preferences?account_id=${accountId}`
-        : "/api/preferences";
-      const res = await fetch(url);
+      const res = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessDescription: params.businessDescription,
+          websiteUrl: params.websiteUrl,
+          tone: params.tone,
+          charMin: params.charMin,
+          charMax: params.charMax,
+          targetAudience: params.targetAudience,
+          mainProblem: params.mainProblem,
+          keyFeatures: params.keyFeatures,
+        }),
+      });
+
+      const data = await res.json();
+
       if (res.ok) {
-        const data = await res.json();
-        setBusinessDescription(data.business_description || "");
-        setWebsiteUrl(data.website_url || "");
-        if (data.default_tone) setTone(data.default_tone as Tone);
-        if (data.char_min && data.char_max) {
-          setCharMin(data.char_min);
-          setCharMax(data.char_max);
-        }
-        setTargetAudience(data.target_audience || "");
-        setMainProblem(data.main_problem || "");
-        setKeyFeatures(data.key_features || "");
+        setPost(data.post);
+        setMedia({ status: "none" });
+        setOgData(null);
+        setOgLoading(false);
+        setAiStatus("done");
+      } else {
+        setAiError(data.error || "Generation failed");
+        setAiStatus("error");
       }
     } catch {
-      // silently fail - form stays at defaults
-    } finally {
-      setPrefsStatus("loaded");
+      setAiError("Network error. Check that the server is running.");
+      setAiStatus("error");
     }
   }
 
-  useEffect(() => {
-    loadPrefs();
-  }, []);
+  async function handlePublish() {
+    setPublishStatus("publishing");
+    setPublishMessage("");
 
-  useEffect(() => {
-    if (activeAccountId) {
-      loadPrefs(activeAccountId);
-    }
-  }, [activeAccountId]);
+    const mediaPayload =
+      media.status === "uploaded" && media.url && media.mediaType
+        ? { url: media.url, mediaType: media.mediaType }
+        : undefined;
 
-  async function handleSavePrefs() {
-    setSaveStatus("saving");
-    try {
-      const url = activeAccountId
-        ? `/api/preferences?account_id=${activeAccountId}`
-        : "/api/preferences";
-      const res = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          default_tone: tone,
-          business_description: businessDescription.trim(),
-          website_url: websiteUrl.trim(),
-          char_min: charMin,
-          char_max: charMax,
-          target_audience: targetAudience.trim(),
-          main_problem: mainProblem.trim(),
-          key_features: keyFeatures.trim(),
-        }),
-      });
-      if (res.ok) {
-        setSaveStatus("saved");
-      } else {
-        setSaveStatus("error");
-      }
-    } catch {
-      setSaveStatus("error");
+    const res = await fetch("/api/threads/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        post: post.trim(),
+        media: mediaPayload,
+        threads_account_id: activeAccountId,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      setPublishStatus("success");
+      setPublishMessage("Posted!");
+      setPost("");
+      setMedia({ status: "none" });
+      setOgData(null);
+      setOgLoading(false);
+      setAiStatus("idle");
+    } else {
+      setPublishStatus("error");
+      const details = data.details
+        ? typeof data.details === "string"
+          ? data.details
+          : JSON.stringify(data.details, null, 2)
+        : "";
+      setPublishMessage(`${data.error || "Something went wrong"}${details ? `\n${details}` : ""}`);
     }
   }
 
@@ -464,93 +463,6 @@ export default function PostPage() {
     setMedia({ status: "none" });
   }
 
-  const handleGenerateAi = useCallback(async () => {
-    if (!businessDescription.trim()) return;
-
-    setAiStatus("generating");
-    setAiError("");
-
-    try {
-      const res = await fetch("/api/ai/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          businessDescription: businessDescription.trim(),
-          websiteUrl: websiteUrl.trim() || undefined,
-          tone,
-          charMin,
-          charMax,
-          targetAudience: targetAudience.trim() || undefined,
-          mainProblem: mainProblem.trim() || undefined,
-          keyFeatures: keyFeatures.trim() || undefined,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setPost(data.post);
-        setMedia({ status: "none" });
-        setOgData(null);
-        setOgLoading(false);
-        setAiStatus("done");
-      } else {
-        setAiError(data.error || "Generation failed");
-        setAiStatus("error");
-      }
-    } catch {
-      setAiError("Network error. Check that the server is running.");
-      setAiStatus("error");
-    }
-  }, [businessDescription, websiteUrl, tone]);
-
-  async function handlePublish() {
-    setPublishStatus("publishing");
-    setPublishMessage("");
-
-    const mediaPayload =
-      media.status === "uploaded" && media.url && media.mediaType
-        ? { url: media.url, mediaType: media.mediaType }
-        : undefined;
-
-    const res = await fetch("/api/threads/publish", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        post: post.trim(),
-        media: mediaPayload,
-        threads_account_id: activeAccountId,
-      }),
-    });
-
-    const data = await res.json();
-
-    if (res.ok) {
-      setPublishStatus("success");
-      setPublishMessage("Posted!");
-      setPost("");
-      setMedia({ status: "none" });
-      setOgData(null);
-      setOgLoading(false);
-      setAiStatus("idle");
-    } else {
-      setPublishStatus("error");
-      const details = data.details
-        ? typeof data.details === "string"
-          ? data.details
-          : JSON.stringify(data.details, null, 2)
-        : "";
-      setPublishMessage(`${data.error || "Something went wrong"}${details ? `\n${details}` : ""}`);
-    }
-  }
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      handleGenerateAi();
-    }
-  }
-
   return (
     <main
       className={`${fraunces.variable} ${inter.variable} ${plexMono.variable} min-h-screen bg-[#FAF8F2] [font-family:var(--font-body)]`}
@@ -566,178 +478,17 @@ export default function PostPage() {
         </header>
 
         <div className="grid lg:grid-cols-5 gap-6">
-          <section className="lg:col-span-2 rounded-2xl border border-[#E4DFD3] bg-white shadow-sm p-6 space-y-5 h-fit">
-            <h2 className={eyebrowClass}>AI Generator</h2>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[#1D1B18]">What does your business do?</label>
-              <textarea
-                value={businessDescription}
-                onChange={(e) => setBusinessDescription(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="e.g. We sell organic coffee subscriptions..."
-                rows={2}
-                disabled={aiStatus === "generating"}
-                className={textareaClass}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[#1D1B18]">
-                Target audience <span className="text-[#A39C8C] font-normal">(optional)</span>
-              </label>
-              <textarea
-                value={targetAudience}
-                onChange={(e) => setTargetAudience(e.target.value)}
-                placeholder="e.g. Freelancers, small business owners"
-                rows={2}
-                disabled={aiStatus === "generating"}
-                className={textareaClass}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[#1D1B18]">
-                Main problem you solve <span className="text-[#A39C8C] font-normal">(optional)</span>
-              </label>
-              <textarea
-                value={mainProblem}
-                onChange={(e) => setMainProblem(e.target.value)}
-                placeholder="e.g. People waste time on manual scheduling"
-                rows={2}
-                disabled={aiStatus === "generating"}
-                className={textareaClass}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[#1D1B18]">
-                Key features <span className="text-[#A39C8C] font-normal">(optional)</span>
-              </label>
-              <textarea
-                value={keyFeatures}
-                onChange={(e) => setKeyFeatures(e.target.value)}
-                placeholder="e.g. Auto-scheduling, analytics, team collaboration"
-                rows={2}
-                disabled={aiStatus === "generating"}
-                className={textareaClass}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[#1D1B18]">
-                Website URL <span className="text-[#A39C8C] font-normal">(optional)</span>
-              </label>
-              <textarea
-                value={websiteUrl}
-                onChange={(e) => setWebsiteUrl(e.target.value)}
-                placeholder="https://example.com"
-                rows={2}
-                disabled={aiStatus === "generating"}
-                className={textareaClass}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[#1D1B18]">Tone</label>
-              <div className="flex flex-wrap gap-2">
-                {TONES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setTone(t.id)}
-                    disabled={aiStatus === "generating"}
-                    className={`rounded-full px-4 py-1.5 text-sm font-medium border transition-colors ${
-                      tone === t.id
-                        ? "bg-[#2F4468] text-white border-[#2F4468]"
-                        : "bg-white text-[#57534A] border-[#E4DFD3] hover:border-[#2F4468] hover:text-[#2F4468]"
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-[#1D1B18]">Min characters: {charMin}</label>
-                <input
-                  type="range"
-                  min={SLIDER_MIN}
-                  max={charMax - 10}
-                  step={10}
-                  value={charMin}
-                  onChange={(e) => setCharMin(Number(e.target.value))}
-                  disabled={aiStatus === "generating"}
-                  className="w-full accent-[#2F4468]"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-[#1D1B18]">Max characters: {charMax}</label>
-                <input
-                  type="range"
-                  min={charMin + 10}
-                  max={SLIDER_MAX}
-                  step={10}
-                  value={charMax}
-                  onChange={(e) => setCharMax(Number(e.target.value))}
-                  disabled={aiStatus === "generating"}
-                  className="w-full accent-[#2F4468]"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleSavePrefs}
-                disabled={saveStatus === "saving" || prefsStatus === "loading"}
-                className={`${secondaryButtonClass} flex-1`}
-              >
-                {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved!" : "Save as Defaults"}
-              </button>
-
-              <button
-                onClick={handleGenerateAi}
-                disabled={aiStatus === "generating" || !businessDescription.trim()}
-                className="rounded-xl bg-[#B8862E] px-5 py-2 text-sm font-medium text-white hover:bg-[#9C7226] disabled:bg-[#D8C9A8] disabled:cursor-not-allowed transition-colors flex-1"
-              >
-                {aiStatus === "generating" ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                    Generating...
-                  </span>
-                ) : (
-                  "Generate with AI"
-                )}
-              </button>
-            </div>
-
-            {aiStatus === "done" && (
-              <button onClick={handleGenerateAi} className={`${secondaryButtonClass} w-full`}>
-                Regenerate
-              </button>
-            )}
-
-            {aiStatus === "generating" && (
-              <p className="text-xs text-[#6B6459] flex items-center gap-1.5">
-                <svg className="animate-pulse h-2.5 w-2.5 text-[#B8862E]" viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="12" cy="12" r="10" />
-                </svg>
-                Generating posts...
-              </p>
-            )}
-
-            {aiStatus === "error" && (
-              <div className="rounded-xl bg-[#FBEAE8] border border-[#F0C4BF] px-3 py-2 text-xs text-[#8A2A22]">
-                {aiError}
-              </div>
-            )}
-          </section>
+          <AiGeneratorPanel
+            key={activeAccountId}
+            preferences={preferences}
+            prefsLoading={prefsLoading}
+            prefsValidating={prefsValidating}
+            activeAccountId={activeAccountId}
+            onSavePrefs={handleSavePrefs}
+            onGenerate={handleGenerateAi}
+            aiStatus={aiStatus}
+            aiError={aiError}
+          />
 
           <section className="lg:col-span-3 rounded-2xl border border-[#E4DFD3] bg-white shadow-sm p-6 space-y-5">
             <div className="flex items-center justify-between">
@@ -748,8 +499,8 @@ export default function PostPage() {
               label="Post"
               post={post}
               media={media}
-              charMin={charMin}
-              charMax={charMax}
+              charMin={preferences?.char_min ?? 240}
+              charMax={preferences?.char_max ?? 480}
               og={ogData}
               loadingOg={ogLoading}
               disabled={publishStatus === "publishing"}
@@ -759,7 +510,7 @@ export default function PostPage() {
               onRemoveMedia={removeMedia}
             />
 
-            {connAccounts.length > 1 && (
+            {accounts.length > 1 && (
               <div className="space-y-1.5">
                 <label className={eyebrowClass}>Publish to</label>
                 <select
@@ -768,7 +519,7 @@ export default function PostPage() {
                   disabled={publishStatus === "publishing"}
                   className="w-full rounded-xl border border-[#E4DFD3] bg-white px-3 py-2 text-sm text-[#1D1B18] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468]"
                 >
-                  {connAccounts.map((acc) => (
+                  {accounts.map((acc) => (
                     <option key={acc.id} value={acc.id}>
                       {acc.username || `Threads #${acc.threads_user_id.slice(0, 8)}`}
                     </option>

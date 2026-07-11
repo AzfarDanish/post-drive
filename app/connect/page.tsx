@@ -2,19 +2,13 @@
 
 import { useAuth } from "@/components/auth-provider";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-
-interface Account {
-  id: string;
-  threads_user_id: string;
-  username?: string | null;
-}
+import { useEffect } from "react";
+import { useAccounts } from "@/hooks/use-accounts";
 
 export default function ConnectPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [checking, setChecking] = useState(true);
+  const { accounts, loading: accountsLoading } = useAccounts();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -22,19 +16,7 @@ export default function ConnectPage() {
     }
   }, [user, loading, router]);
 
-  useEffect(() => {
-    async function load() {
-      const res = await fetch("/api/threads/check");
-      const data = await res.json();
-      if (data.accounts) {
-        setAccounts(data.accounts);
-      }
-      setChecking(false);
-    }
-    load();
-  }, []);
-
-  if (loading || checking) return null;
+  if (loading || (accountsLoading && !accounts.length)) return null;
 
   return (
     <main className="min-h-screen bg-[#FAF8F2] p-6">
@@ -61,7 +43,7 @@ export default function ConnectPage() {
             </div>
           ))}
 
-          {accounts.length === 0 && !checking && (
+          {accounts.length === 0 && !accountsLoading && (
             <p className="text-sm text-[#6B6459]">
               No Threads accounts connected yet.
             </p>
