@@ -113,10 +113,14 @@ export async function publishAsAccount(
 
       attempts++;
       if (attempts >= maxAttempts) {
+        const errorBody = containerData as { error?: { code?: number } };
+        const isPermissionError = errorBody.error?.code === 10;
         return {
           success: false,
           post_ids: publishedIds,
-          error: `Failed to create container for post ${i + 1}`,
+          error: isPermissionError
+            ? `Permission denied for post ${i + 1}. Reconnect your Threads account in Settings to grant reply permissions.`
+            : `Failed to create container for post ${i + 1}`,
           details: containerData,
           published_count: publishedIds.length,
         };

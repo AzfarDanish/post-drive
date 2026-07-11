@@ -30,7 +30,7 @@ export async function GET() {
   const params = new URLSearchParams({
     client_id: process.env.NEXT_PUBLIC_THREADS_APP_ID!,
     redirect_uri: process.env.NEXT_PUBLIC_THREADS_REDIRECT_URI!,
-    scope: "threads_basic,threads_content_publish",
+    scope: "threads_basic,threads_content_publish,threads_manage_replies",
     response_type: "code",
     state,
   });
