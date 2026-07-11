@@ -72,6 +72,7 @@ export async function publishAsAccount(
   const userId = account.threads_user_id;
   const token = account.access_token;
   const publishedIds: string[] = [];
+  let previousPublishedId: string | null = null;
 
   for (let i = 0; i < posts.length; i++) {
     const text = posts[i].trim();
@@ -89,6 +90,10 @@ export async function publishAsAccount(
       body.text = text;
     } else {
       body.text = text;
+    }
+
+    if (previousPublishedId) {
+      body.reply_to_id = previousPublishedId;
     }
 
     let containerData: { id?: string };
@@ -146,6 +151,7 @@ export async function publishAsAccount(
     }
 
     publishedIds.push(publishData.id);
+    previousPublishedId = publishData.id;
   }
 
   return { success: true, post_ids: publishedIds, published_count: publishedIds.length };
