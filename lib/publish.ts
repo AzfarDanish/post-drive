@@ -77,10 +77,6 @@ export async function publishAsAccount(
     const text = posts[i].trim();
     const postMedia: PostMedia | null = media?.[i] ?? null;
 
-    if (i > 0 && publishedIds[i - 1]) {
-      await new Promise((resolve) => setTimeout(resolve, 3_000));
-    }
-
     const body: Record<string, string> = {
       media_type: postMedia ? postMedia.mediaType : "TEXT",
       access_token: token,
@@ -93,10 +89,6 @@ export async function publishAsAccount(
       body.text = text;
     } else {
       body.text = text;
-    }
-
-    if (i > 0 && publishedIds[i - 1]) {
-      body.reply_to_id = publishedIds[i - 1];
     }
 
     let containerData: { id?: string };
