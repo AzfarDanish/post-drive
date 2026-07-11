@@ -27,10 +27,10 @@ async function main() {
   console.log("Publishing:", text);
   console.log();
 
-  const result = await publishAsAccount([text], undefined, account);
+  const result = await publishAsAccount(text, undefined, account);
 
   console.log("Success:", result.success);
-  console.log("Post IDs:", result.post_ids);
+  console.log("Post ID:", result.post_id);
   if (result.error) {
     console.log("Error:", result.error);
     console.log("Details:", JSON.stringify(result.details, null, 2));

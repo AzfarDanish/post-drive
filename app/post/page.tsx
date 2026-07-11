@@ -113,37 +113,32 @@ function OgPreviewCard({ og }: { og: OgData }) {
 }
 
 function MediaField({
-  index,
   media,
   disabled,
-  fileInputRefs,
+  fileInputRef,
   onSelect,
   onRemove,
 }: {
-  index: number;
   media: PostMedia;
   disabled: boolean;
-  fileInputRefs: { current: (HTMLInputElement | null)[] };
-  onSelect: (index: number, file: File | null) => void;
-  onRemove: (index: number) => void;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  onSelect: (file: File | null) => void;
+  onRemove: () => void;
 }) {
   return (
     <div className="flex items-center gap-2">
       <input
-        ref={(el) => {
-          // eslint-disable-next-line react-hooks/immutability
-          fileInputRefs.current[index] = el;
-        }}
+        ref={fileInputRef}
         type="file"
         accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime"
-        onChange={(e) => onSelect(index, e.target.files?.[0] || null)}
+        onChange={(e) => onSelect(e.target.files?.[0] || null)}
         className="hidden"
       />
 
       {media.status === "none" ? (
         <button
           type="button"
-          onClick={() => fileInputRefs.current[index]?.click()}
+          onClick={() => fileInputRef.current?.click()}
           disabled={disabled}
           className={addMediaLinkClass}
         >
@@ -168,7 +163,7 @@ function MediaField({
           </div>
           <button
             type="button"
-            onClick={() => onRemove(index)}
+            onClick={onRemove}
             disabled={disabled}
             className={`${removeLinkClass} flex-shrink-0`}
           >
@@ -181,7 +176,6 @@ function MediaField({
 }
 
 function PostComposer({
-  index,
   label,
   post,
   media,
@@ -190,14 +184,11 @@ function PostComposer({
   og,
   loadingOg,
   disabled,
-  showRemove,
-  fileInputRefs,
+  fileInputRef,
   onChange,
-  onRemove,
   onFileSelect,
   onRemoveMedia,
 }: {
-  index: number;
   label: string;
   post: string;
   media: PostMedia;
@@ -206,39 +197,29 @@ function PostComposer({
   og: OgData | null | undefined;
   loadingOg: boolean | undefined;
   disabled: boolean;
-  showRemove: boolean;
-  fileInputRefs: { current: (HTMLInputElement | null)[] };
-  onChange: (index: number, value: string) => void;
-  onRemove: (index: number) => void;
-  onFileSelect: (index: number, file: File | null) => void;
-  onRemoveMedia: (index: number) => void;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  onChange: (value: string) => void;
+  onFileSelect: (file: File | null) => void;
+  onRemoveMedia: () => void;
 }) {
   const count = post.length;
   const ratio = count / charMax;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <label className={eyebrowClass}>{label}</label>
-        {showRemove && (
-          <button type="button" onClick={() => onRemove(index)} disabled={disabled} className={removeLinkClass}>
-            Remove
-          </button>
-        )}
-      </div>
+      <label className={eyebrowClass}>{label}</label>
 
       <MediaField
-        index={index}
         media={media}
         disabled={disabled}
-        fileInputRefs={fileInputRefs}
+        fileInputRef={fileInputRef}
         onSelect={onFileSelect}
         onRemove={onRemoveMedia}
       />
 
       <textarea
         value={post}
-        onChange={(e) => onChange(index, e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onInput={(e) => autoResize(e.currentTarget)}
         placeholder={`${label}...`}
         rows={3}
@@ -270,8 +251,8 @@ function PostComposer({
 export default function PostPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [posts, setPosts] = useState<string[]>([""]);
-  const [media, setMedia] = useState<PostMedia[]>([{ status: "none" }]);
+  const [post, setPost] = useState("");
+  const [media, setMedia] = useState<PostMedia>({ status: "none" });
 
   const [businessDescription, setBusinessDescription] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
@@ -290,13 +271,13 @@ export default function PostPage() {
   const [publishStatus, setPublishStatus] = useState<"idle" | "publishing" | "success" | "error">("idle");
   const [publishMessage, setPublishMessage] = useState("");
 
-  const [ogData, setOgData] = useState<(OgData | null)[]>([]);
-  const [ogLoading, setOgLoading] = useState<boolean[]>([]);
+  const [ogData, setOgData] = useState<OgData | null>(null);
+  const [ogLoading, setOgLoading] = useState(false);
 
   const [diagnostic, setDiagnostic] = useState<Record<string, unknown> | null>(null);
   const [checking, setChecking] = useState(false);
 
-  const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fetchedOgUrls = useRef<Set<string>>(new Set());
 
   const [connAccounts, setConnAccounts] = useState<{ id: string; threads_user_id: string; username?: string | null }[]>([]);
@@ -322,79 +303,44 @@ export default function PostPage() {
     if (user) loadAccounts();
   }, [user]);
 
-  function updatePost(index: number, value: string) {
-    setPosts((prev) => {
-      const next = [...prev];
-      next[index] = value;
-      return next;
-    });
-  }
-
-  function removePost(index: number) {
-    if (posts.length <= 1) return;
-    setPosts((prev) => prev.filter((_, i) => i !== index));
-    setMedia((prev) => prev.filter((_, i) => i !== index));
-  }
-
   useEffect(() => {
-    const timers = posts.map((text, i) =>
-      setTimeout(async () => {
-        const url = extractFirstUrl(text);
+    const timer = setTimeout(async () => {
+      const url = extractFirstUrl(post);
 
-        if (!url) {
-          setOgData((prev) => {
-            if (prev[i] === null) return prev;
-            const next = [...prev];
-            next[i] = null;
-            return next;
-          });
-          return;
+      if (!url) {
+        setOgData(null);
+        return;
+      }
+
+      if (fetchedOgUrls.current.has(url)) return;
+      fetchedOgUrls.current.add(url);
+
+      setOgLoading(true);
+
+      try {
+        const res = await fetch(`/api/og?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+
+        if (data.image && !data.image.startsWith("/")) {
+          data.image = `/api/media/proxy?url=${encodeURIComponent(data.image)}`;
         }
 
-        if (fetchedOgUrls.current.has(url)) return;
-        fetchedOgUrls.current.add(url);
+        setOgData(data);
+      } catch {
+        fetchedOgUrls.current.delete(url);
+      } finally {
+        setOgLoading(false);
+      }
+    }, 500);
 
-        setOgLoading((prev) => {
-          const next = [...prev];
-          next[i] = true;
-          return next;
-        });
-
-        try {
-          const res = await fetch(`/api/og?url=${encodeURIComponent(url)}`);
-          const data = await res.json();
-
-          if (data.image && !data.image.startsWith("/")) {
-            data.image = `/api/media/proxy?url=${encodeURIComponent(data.image)}`;
-          }
-
-          setOgData((prev) => {
-            const next = [...prev];
-            next[i] = data;
-            return next;
-          });
-        } catch {
-          fetchedOgUrls.current.delete(url);
-        } finally {
-          setOgLoading((prev) => {
-            const next = [...prev];
-            next[i] = false;
-            return next;
-          });
-        }
-      }, 500)
-    );
-
-    return () => {
-      timers.forEach((t) => clearTimeout(t));
-    };
-  }, [posts]);
+    return () => clearTimeout(timer);
+  }, [post]);
 
   useEffect(() => {
     requestAnimationFrame(() => {
       document.querySelectorAll<HTMLTextAreaElement>(".post-textarea").forEach(autoResize);
     });
-  }, [posts]);
+  }, [post]);
 
   async function loadPrefs(accountId?: string) {
     setPrefsStatus("loading");
@@ -463,19 +409,15 @@ export default function PostPage() {
     }
   }
 
-  async function handleFileSelect(index: number, file: File | null) {
+  async function handleFileSelect(file: File | null) {
     if (!file) return;
 
     const previewUrl = URL.createObjectURL(file);
 
-    setMedia((prev) => {
-      const next = [...prev];
-      next[index] = {
-        status: "uploading",
-        previewUrl,
-        fileName: file.name,
-      };
-      return next;
+    setMedia({
+      status: "uploading",
+      previewUrl,
+      fileName: file.name,
     });
 
     try {
@@ -490,52 +432,36 @@ export default function PostPage() {
       const data = await res.json();
 
       if (res.ok) {
-        setMedia((prev) => {
-          const next = [...prev];
-          next[index] = {
-            status: "uploaded",
-            url: data.url,
-            mediaType: data.mediaType,
-            previewUrl,
-            fileName: file.name,
-          };
-          return next;
+        setMedia({
+          status: "uploaded",
+          url: data.url,
+          mediaType: data.mediaType,
+          previewUrl,
+          fileName: file.name,
         });
       } else {
-        setMedia((prev) => {
-          const next = [...prev];
-          next[index] = {
-            status: "error",
-            error: data.error || "Upload failed",
-            previewUrl,
-            fileName: file.name,
-          };
-          return next;
+        setMedia({
+          status: "error",
+          error: data.error || "Upload failed",
+          previewUrl,
+          fileName: file.name,
         });
       }
     } catch {
-      setMedia((prev) => {
-        const next = [...prev];
-        next[index] = {
-          status: "error",
-          error: "Network error",
-          previewUrl,
-          fileName: file.name,
-        };
-        return next;
+      setMedia({
+        status: "error",
+        error: "Network error",
+        previewUrl,
+        fileName: file.name,
       });
     }
   }
 
-  function removeMedia(index: number) {
-    setMedia((prev) => {
-      const next = [...prev];
-      if (next[index].previewUrl) {
-        URL.revokeObjectURL(next[index].previewUrl!);
-      }
-      next[index] = { status: "none" };
-      return next;
-    });
+  function removeMedia() {
+    if (media.previewUrl) {
+      URL.revokeObjectURL(media.previewUrl);
+    }
+    setMedia({ status: "none" });
   }
 
   const handleGenerateAi = useCallback(async () => {
@@ -563,27 +489,10 @@ export default function PostPage() {
       const data = await res.json();
 
       if (res.ok) {
-        setPosts(data.posts);
-        setMedia((prev) =>
-          data.posts.length > prev.length
-            ? [
-                ...prev,
-                ...Array(data.posts.length - prev.length).fill({
-                  status: "none",
-                } as PostMedia),
-              ]
-            : prev.slice(0, data.posts.length)
-        );
-        setOgData((prev) =>
-          data.posts.length > prev.length
-            ? [...prev, ...Array(data.posts.length - prev.length).fill(null)]
-            : prev.slice(0, data.posts.length)
-        );
-        setOgLoading((prev) =>
-          data.posts.length > prev.length
-            ? [...prev, ...Array(data.posts.length - prev.length).fill(false)]
-            : prev.slice(0, data.posts.length)
-        );
+        setPost(data.post);
+        setMedia({ status: "none" });
+        setOgData(null);
+        setOgLoading(false);
         setAiStatus("done");
       } else {
         setAiError(data.error || "Generation failed");
@@ -599,15 +508,16 @@ export default function PostPage() {
     setPublishStatus("publishing");
     setPublishMessage("");
 
-    const mediaPayload = media.map((m) =>
-      m.status === "uploaded" && m.url && m.mediaType ? { url: m.url, mediaType: m.mediaType } : null
-    );
+    const mediaPayload =
+      media.status === "uploaded" && media.url && media.mediaType
+        ? { url: media.url, mediaType: media.mediaType }
+        : undefined;
 
     const res = await fetch("/api/threads/publish", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        posts: posts.map((p) => p.trim()),
+        post: post.trim(),
         media: mediaPayload,
         threads_account_id: activeAccountId,
       }),
@@ -617,11 +527,11 @@ export default function PostPage() {
 
     if (res.ok) {
       setPublishStatus("success");
-      setPublishMessage(`Thread posted! (${data.post_ids.length} posts)`);
-      setPosts([""]);
-      setMedia([{ status: "none" }]);
-      setOgData([]);
-      setOgLoading([]);
+      setPublishMessage("Posted!");
+      setPost("");
+      setMedia({ status: "none" });
+      setOgData(null);
+      setOgLoading(false);
       setAiStatus("idle");
     } else {
       setPublishStatus("error");
@@ -630,10 +540,7 @@ export default function PostPage() {
           ? data.details
           : JSON.stringify(data.details, null, 2)
         : "";
-      const published = data.published?.length
-        ? `\nPublished ${data.published.length} of ${posts.length} posts before failure.`
-        : "";
-      setPublishMessage(`${data.error || "Something went wrong"}${published}${details ? `\n${details}` : ""}`);
+      setPublishMessage(`${data.error || "Something went wrong"}${details ? `\n${details}` : ""}`);
     }
   }
 
@@ -834,65 +741,23 @@ export default function PostPage() {
 
           <section className="lg:col-span-3 rounded-2xl border border-[#E4DFD3] bg-white shadow-sm p-6 space-y-5">
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className={eyebrowClass}>Composer</h2>
-                {posts.length > 1 && (
-                  <p className="text-xs text-[#A39C8C] mt-0.5">
-                    {posts.length - 1} repl{posts.length - 1 === 1 ? "y" : "ies"}
-                  </p>
-                )}
-              </div>
+              <h2 className={eyebrowClass}>Composer</h2>
             </div>
 
-            {posts.length > 0 && (
-              <PostComposer
-                index={0}
-                label="Post"
-                post={posts[0]}
-                media={media[0] ?? { status: "none" }}
-                charMin={charMin}
-                charMax={charMax}
-                og={ogData[0]}
-                loadingOg={ogLoading[0]}
-                disabled={publishStatus === "publishing"}
-                showRemove={false}
-                fileInputRefs={fileInputRefs}
-                onChange={updatePost}
-                onRemove={removePost}
-                onFileSelect={handleFileSelect}
-                onRemoveMedia={removeMedia}
-              />
-            )}
-
-            {posts.length > 1 && (
-              <div className="relative ml-3 pl-7 space-y-6 before:content-[''] before:absolute before:left-0 before:top-1 before:bottom-1 before:border-l-2 before:border-dotted before:border-[#B8862E]/50">
-                {posts.slice(1).map((post, idx) => {
-                  const i = idx + 1;
-                  return (
-                    <div key={i} className="relative">
-                      <span className="absolute -left-7 top-1 w-2.5 h-2.5 rounded-full bg-[#B8862E] ring-4 ring-[#FAF8F2]" />
-                      <PostComposer
-                        index={i}
-                        label={`Reply ${idx + 1}`}
-                        post={post}
-                        media={media[i] ?? { status: "none" }}
-                        charMin={charMin}
-                        charMax={charMax}
-                        og={ogData[i]}
-                        loadingOg={ogLoading[i]}
-                        disabled={publishStatus === "publishing"}
-                        showRemove
-                        fileInputRefs={fileInputRefs}
-                        onChange={updatePost}
-                        onRemove={removePost}
-                        onFileSelect={handleFileSelect}
-                        onRemoveMedia={removeMedia}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <PostComposer
+              label="Post"
+              post={post}
+              media={media}
+              charMin={charMin}
+              charMax={charMax}
+              og={ogData}
+              loadingOg={ogLoading}
+              disabled={publishStatus === "publishing"}
+              fileInputRef={fileInputRef}
+              onChange={setPost}
+              onFileSelect={handleFileSelect}
+              onRemoveMedia={removeMedia}
+            />
 
             {connAccounts.length > 1 && (
               <div className="space-y-1.5">
@@ -917,7 +782,7 @@ export default function PostPage() {
               disabled={publishStatus === "publishing"}
               className="rounded-xl bg-[#1D1B18] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#2F4468] disabled:bg-[#C9C3B5] disabled:cursor-not-allowed transition-colors w-full"
             >
-              {publishStatus === "publishing" ? "Publishing thread..." : "Publish Thread to Threads"}
+              {publishStatus === "publishing" ? "Publishing..." : "Publish to Threads"}
             </button>
 
             {publishStatus === "success" && (

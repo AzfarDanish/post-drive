@@ -2,17 +2,16 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { generatePost, splitPostByCharLimit, stripLeadingPostLabel, type Tone } from "@/lib/ai";
 
-const FIX_SYSTEM = `You help fix a single post in a Threads thread.
+const FIX_SYSTEM = `You help fix a single post for Threads.
 Respond with ONLY the corrected post text and nothing else.
-Do not include any label, prefix, or number like "Post 1" or "Reply 2".
-No separators. No markdown. No quotation marks around the text.
+Do not include any label or prefix.
+No markdown. No quotation marks around the text.
 Write at B2 level or below. Simple English. Short words. Broken grammar is okay.
-No questions. Keep the same tone and style as the surrounding posts.`;
+No questions.`;
 
 function fixPrompt(
   businessDescription: string,
-  posts: string[],
-  index: number,
+  post: string,
   charMin: number,
   charMax: number,
   targetAudience?: string,
@@ -24,21 +23,13 @@ function fixPrompt(
   if (mainProblem) biz += `\nMain problem: ${mainProblem}`;
   if (keyFeatures) biz += `\nKey features: ${keyFeatures}`;
 
-  const context = posts
-    .map((p, i) => {
-      if (i === index) return `[POST TO FIX]\n${p || "(empty)"}`;
-      return `[CONTEXT POST]\n${p}`;
-    })
-    .join("\n\n");
-
   return `${biz}
 
-Thread:
-${context}
+Post to fix:
+${post}
 
-Rewrite the post marked [POST TO FIX]. Output only the corrected text, no label, no prefix.
-It must be between ${charMin} and ${charMax} characters.
-Keep it connected to the surrounding context posts. Same tone and style.`;
+Rewrite this post. Output only the corrected text, no label, no prefix.
+It must be between ${charMin} and ${charMax} characters. Keep the same tone and style.`;
 }
 
 export interface GenerateOptions {
@@ -55,7 +46,7 @@ export interface GenerateOptions {
 
 export async function generateAndProcessPosts(
   options: GenerateOptions
-): Promise<string[]> {
+): Promise<string> {
   const {
     businessDescription,
     websiteUrl,
@@ -70,7 +61,7 @@ export async function generateAndProcessPosts(
 
   const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const rawPosts = await generatePost(
+  let post = await generatePost(
     businessDescription,
     websiteUrl,
     tone,
@@ -83,86 +74,55 @@ export async function generateAndProcessPosts(
   );
 
   const link = websiteUrl || "";
-  const posts: string[] = [];
 
-  for (const post of rawPosts) {
-    const cleaned = stripLeadingPostLabel(post.trim());
+  if (post.length > charMax) {
+    post = stripLeadingPostLabel(post.slice(0, charMax));
+  }
 
-    if (cleaned.length > charMax) {
-      const chunks = splitPostByCharLimit(cleaned, charMin, charMax).map(stripLeadingPostLabel);
-
-      for (let i = 0; i < chunks.length - 1; i++) {
-        posts.push(chunks[i]);
+  if (post.length < charMin) {
+    if (link && !post.includes(link)) {
+      const withLink = post + "\n\n" + link;
+      if (withLink.length >= charMin && withLink.length <= charMax) {
+        post = withLink;
       }
-
-      let remainder = chunks[chunks.length - 1];
-
-      if (remainder.length < charMin && link && !remainder.includes(link)) {
-        const withLink = remainder + "\n\n" + link;
-        if (withLink.length >= charMin && withLink.length <= charMax) {
-          remainder = withLink;
-        }
-      }
-
-      if (remainder.length < charMin) {
-        let fixed: string | null = null;
-        let lastAttempt = remainder;
-
-        for (let attempt = 0; attempt < 3 && !fixed; attempt++) {
-          try {
-            const { text } = await generateText({
-              model: openai("gpt-4o-mini"),
-              system: FIX_SYSTEM,
-              prompt:
-                fixPrompt(
-                  businessDescription,
-                  [...rawPosts, ""],
-                  rawPosts.length,
-                  charMin,
-                  charMax,
-                  targetAudience,
-                  mainProblem,
-                  keyFeatures
-                ) +
-                (attempt > 0
-                  ? `\n\nYour last attempt was ${lastAttempt.length} characters. That is under the ${charMin} minimum. Add more relevant detail. Do not pad with filler.`
-                  : ""),
-              temperature: 0.7,
-              frequencyPenalty: 0.4,
-            });
-            const candidate = stripLeadingPostLabel(text.trim()).slice(0, charMax);
-            lastAttempt = candidate;
-            if (candidate.length >= charMin) {
-              fixed = candidate;
-            }
-          } catch {
-            // try again on next loop iteration
-          }
-        }
-
-        if (fixed) {
-          remainder = fixed;
-        } else {
-          const previous = posts[posts.length - 1];
-          const merged = previous ? `${previous}\n\n${remainder}` : remainder;
-          if (previous && merged.length <= charMax) {
-            posts[posts.length - 1] = merged;
-            remainder = "";
-          } else {
-            console.warn(
-              `Post stayed under charMin (${charMin}) after all fallbacks. Published at ${remainder.length} characters.`
-            );
-          }
-        }
-      }
-
-      if (remainder) {
-        posts.push(remainder);
-      }
-    } else {
-      posts.push(cleaned);
     }
   }
 
-  return posts;
+  if (post.length < charMin) {
+    let fixed: string | null = null;
+    let lastAttempt = post;
+
+    for (let attempt = 0; attempt < 3 && !fixed; attempt++) {
+      try {
+        const { text } = await generateText({
+          model: openai("gpt-4o-mini"),
+          system: FIX_SYSTEM,
+          prompt:
+            fixPrompt(businessDescription, post, charMin, charMax, targetAudience, mainProblem, keyFeatures) +
+            (attempt > 0
+              ? `\n\nYour last attempt was ${lastAttempt.length} characters. That is under the ${charMin} minimum. Add more relevant detail. Do not pad with filler.`
+              : ""),
+          temperature: 0.7,
+          frequencyPenalty: 0.4,
+        });
+        const candidate = stripLeadingPostLabel(text.trim()).slice(0, charMax);
+        lastAttempt = candidate;
+        if (candidate.length >= charMin) {
+          fixed = candidate;
+        }
+      } catch {
+        // try again on next loop iteration
+      }
+    }
+
+    if (fixed) {
+      post = fixed;
+    } else {
+      console.warn(
+        `Post stayed under charMin (${charMin}) after all fallbacks. Published at ${post.length} characters.`
+      );
+    }
+  }
+
+  return post;
 }

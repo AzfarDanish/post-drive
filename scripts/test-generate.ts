@@ -12,12 +12,10 @@ async function main() {
   const businessDescription = process.argv[2];
 
   if (businessDescription) {
-    const posts = await generatePost(businessDescription, undefined, "rage-bait", 240, 480);
-    posts.forEach((p, i) => {
-      console.log(`--- Post ${i + 1} (${p.length} chars) ---`);
-      console.log(p);
-      console.log();
-    });
+    const post = await generatePost(businessDescription, undefined, "rage-bait", 240, 480);
+    console.log(`--- Post (${post.length} chars) ---`);
+    console.log(post);
+    console.log();
     return;
   }
 
@@ -37,7 +35,7 @@ async function main() {
   if (prefs.website_url) console.log(`Website: ${prefs.website_url}`);
   console.log();
 
-  const posts = await generatePost(
+  const post = await generatePost(
     prefs.business_description,
     prefs.website_url || undefined,
     (prefs.default_tone as "rage-bait" | "hot-take" | "storytelling" | "educational") || "rage-bait",
@@ -48,11 +46,9 @@ async function main() {
     prefs.key_features || undefined
   );
 
-  posts.forEach((p, i) => {
-    console.log(`--- Post ${i + 1} (${p.length} chars) ---`);
-    console.log(p);
-    console.log();
-  });
+  console.log(`--- Post (${post.length} chars) ---`);
+  console.log(post);
+  console.log();
 }
 
 main();

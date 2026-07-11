@@ -12,15 +12,14 @@ interface PostMedia {
 
 export interface PublishResult {
   success: boolean;
-  post_ids: string[];
+  post_id?: string;
   error?: string;
   details?: unknown;
-  published_count: number;
 }
 
 export async function publishToThreads(
-  posts: string[],
-  media?: (PostMedia | null)[],
+  post: string,
+  media?: PostMedia | null,
   threadsAccountId?: string
 ): Promise<PublishResult> {
   const supabase = await createClient();
@@ -31,9 +30,7 @@ export async function publishToThreads(
   if (!user) {
     return {
       success: false,
-      post_ids: [],
       error: "Not authenticated",
-      published_count: 0,
     };
   }
 
@@ -54,109 +51,86 @@ export async function publishToThreads(
   if (!account) {
     return {
       success: false,
-      post_ids: [],
       error: "No connected Threads account found. Connect at /connect",
-      published_count: 0,
     };
   }
 
-  return publishAsAccount(posts, media, account);
+  return publishAsAccount(post, media, account);
 }
 
 export async function publishAsAccount(
-  posts: string[],
-  media: (PostMedia | null)[] | undefined,
+  post: string,
+  media: PostMedia | null | undefined,
   account: ThreadsAccount
 ): Promise<PublishResult> {
   const base = "https://graph.threads.net/v1.0";
   const userId = account.threads_user_id;
   const token = account.access_token;
-  const publishedIds: string[] = [];
-  let previousPublishedId: string | null = null;
 
-  for (let i = 0; i < posts.length; i++) {
-    const text = posts[i].trim();
-    const postMedia: PostMedia | null = media?.[i] ?? null;
+  const text = post.trim();
 
-    const body: Record<string, string> = {
-      media_type: postMedia ? postMedia.mediaType : "TEXT",
-      access_token: token,
-    };
+  const body: Record<string, string> = {
+    media_type: media ? media.mediaType : "TEXT",
+    access_token: token,
+  };
 
-    if (postMedia) {
-      const urlKey =
-        postMedia.mediaType === "IMAGE" ? "image_url" : "video_url";
-      body[urlKey] = postMedia.url;
-      body.text = text;
-    } else {
-      body.text = text;
-    }
+  if (media) {
+    const urlKey = media.mediaType === "IMAGE" ? "image_url" : "video_url";
+    body[urlKey] = media.url;
+    body.text = text;
+  } else {
+    body.text = text;
+  }
 
-    if (previousPublishedId) {
-      body.reply_to_id = previousPublishedId;
-    }
+  let containerData: { id?: string };
+  let attempts = 0;
+  const maxAttempts = 3;
 
-    let containerData: { id?: string };
-    let attempts = 0;
-    const maxAttempts = 3;
-
-    while (attempts < maxAttempts) {
-      const containerRes = await fetch(`${base}/${userId}/threads`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      containerData = await containerRes.json();
-
-      if (containerRes.ok) break;
-
-      attempts++;
-      if (attempts >= maxAttempts) {
-        const errorBody = containerData as { error?: { code?: number } };
-        const isPermissionError = errorBody.error?.code === 10;
-        return {
-          success: false,
-          post_ids: publishedIds,
-          error: isPermissionError
-            ? `Permission denied for post ${i + 1}. Reconnect your Threads account in Settings to grant reply permissions.`
-            : `Failed to create container for post ${i + 1}`,
-          details: containerData,
-          published_count: publishedIds.length,
-        };
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 2_000 * attempts));
-    }
-
-    const { id: creation_id } = containerData!;
-
-    await new Promise((resolve) => setTimeout(resolve, 5_000));
-
-    const publishRes = await fetch(`${base}/${userId}/threads_publish`, {
+  while (attempts < maxAttempts) {
+    const containerRes = await fetch(`${base}/${userId}/threads`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        creation_id,
-        access_token: token,
-      }),
+      body: JSON.stringify(body),
     });
 
-    const publishData = await publishRes.json();
+    containerData = await containerRes.json();
 
-    if (!publishRes.ok) {
+    if (containerRes.ok) break;
+
+    attempts++;
+    if (attempts >= maxAttempts) {
       return {
         success: false,
-        post_ids: publishedIds,
-        error: `Failed to publish post ${i + 1}`,
-        details: publishData,
-        published_count: publishedIds.length,
+        error: "Failed to create media container",
+        details: containerData,
       };
     }
 
-    publishedIds.push(publishData.id);
-    previousPublishedId = publishData.id;
+    await new Promise((resolve) => setTimeout(resolve, 2_000 * attempts));
   }
 
-  return { success: true, post_ids: publishedIds, published_count: publishedIds.length };
+  const { id: creation_id } = containerData!;
+
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+
+  const publishRes = await fetch(`${base}/${userId}/threads_publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      creation_id,
+      access_token: token,
+    }),
+  });
+
+  const publishData = await publishRes.json();
+
+  if (!publishRes.ok) {
+    return {
+      success: false,
+      error: "Failed to publish post",
+      details: publishData,
+    };
+  }
+
+  return { success: true, post_id: publishData.id };
 }

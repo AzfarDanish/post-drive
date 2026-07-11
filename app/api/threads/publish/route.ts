@@ -2,31 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { publishToThreads } from "@/lib/publish";
 
 export async function POST(req: NextRequest) {
-  const { posts, media, threads_account_id } = await req.json();
+  const { post, media, threads_account_id } = await req.json();
 
-  if (
-    !Array.isArray(posts) ||
-    posts.length === 0 ||
-    !posts.every((p: unknown) => typeof p === "string" && p.trim().length > 0)
-  ) {
+  if (!post || typeof post !== "string" || !post.trim()) {
     return NextResponse.json(
-      { error: "posts must be a non-empty array of strings" },
+      { error: "post is required" },
       { status: 400 }
     );
   }
 
-  const result = await publishToThreads(posts, media, threads_account_id);
+  const result = await publishToThreads(post, media, threads_account_id);
 
   if (!result.success) {
     return NextResponse.json(
       {
         error: result.error,
         details: result.details,
-        published: result.post_ids,
       },
       { status: 500 }
     );
   }
 
-  return NextResponse.json({ success: true, post_ids: result.post_ids });
+  return NextResponse.json({ success: true, post_id: result.post_id });
 }

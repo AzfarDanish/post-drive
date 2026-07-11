@@ -32,9 +32,8 @@ const writingStyle = `# FOLLOW THIS WRITING STYLE:
 • Use short, simple sentences.
 • Each post can have multiple paragraphs. Separate paragraphs with a blank line.
 • Each paragraph must have at least 3 sentences.
-• The first post in the thread must be longer than the other posts.
 • Speak directly to the reader. Use "you" and "your".
-• If a website URL is provided, include it as a link at the end of the final post.
+• If a website URL is provided, include it at the end of the post.
 • AVOID questions. Do not ask the reader anything.
 • AVOID metaphors and clichés.
 • AVOID generalizations.
@@ -49,48 +48,42 @@ const writingStyle = `# FOLLOW THIS WRITING STYLE:
 • Tell a story — create connection through a single moment, insight, or transformation
 • Know your audience — speak to their needs, interests, and pain points
 
-# IMPORTANT: No em dashes. The only exception is using "---" as the thread post separator between posts.`;
+# IMPORTANT: No em dashes.`;
 
 function tonePrompt(rules: string): string {
   return `${writingStyle}
 
-You are a writer who crafts viral Threads threads.
+You are a writer who crafts viral posts for Threads.
 
-Write a thread of 2-4 posts based on the business information provided.
+Write a single post based on the business information provided.
 No emojis. No marketing.
 
 Rules:
 ${rules}
-- Separate each post with exactly three hyphens "---" on its own line. No blank lines before or after. No spaces around it. Just "---" alone on its line.
-- The "---" separator is the only exception to the no-em-dash rule.
-
-Example output format (follow this format exactly):
-First paragraph of first post. This is the second sentence. This is the third sentence.
-
-Second paragraph of first post. Sentence two. Sentence three.
----
-Second post first paragraph. Sentence two. Sentence three. Sentence four.
----
-Third post text here. Sentence two. Sentence three.`;
+- Output only the post text. No labels, no prefixes, no separators.`;
 }
 
 const systemPrompts: Record<Tone, string> = {
-  "rage-bait": tonePrompt(`- Post 1: A strong opinionated hook that grabs attention. Do NOT mention the business yet.
-- Final post: Reveal what the business does as the natural solution. End with a bold statement.
+  "rage-bait": tonePrompt(`- Start with a strong opinionated hook that grabs attention.
+- Reveal what the business does as the natural solution halfway through.
+- End with a bold statement.
 - Sound like a human, not a brand. No corporate language.`),
 
-  "hot-take": tonePrompt(`- Post 1: A contrarian take that challenges what most people assume. Do NOT mention the business yet.
-- Final post: Reveal what the business does as the natural solution. End with a confident statement.
+  "hot-take": tonePrompt(`- Start with a contrarian take that challenges what most people assume.
+- Reveal what the business does as the natural solution halfway through.
+- End with a confident statement.
 - Sound definitive. No corporate language.`),
 
-  storytelling: tonePrompt(`- Post 1: A short relatable moment or anecdote that hooks the reader. Do NOT mention the business yet.
-- Middle posts: Build the story.
-- Final post: Reveal what the business does as the natural solution. End with a reflective line.
+  storytelling: tonePrompt(`- Open with a short relatable moment or anecdote that hooks the reader.
+- Build the story through the middle.
+- Reveal what the business does as the natural solution near the end.
+- End with a reflective line.
 - Sound personal and real. No corporate language.`),
 
-  educational: tonePrompt(`- Post 1: A specific useful insight or little-known fact. Do NOT mention the business yet.
-- Middle posts: Build the insight.
-- Final post: Reveal what the business does as the natural solution. End with a clear takeaway.
+  educational: tonePrompt(`- Open with a specific useful insight or little-known fact.
+- Build the insight through the middle.
+- Reveal what the business does as the natural solution near the end.
+- End with a clear takeaway.
 - Sound like someone who knows their stuff. No corporate language.`),
 };
 
@@ -104,7 +97,7 @@ export async function generatePost(
   mainProblem?: string,
   keyFeatures?: string,
   recentPostSummaries?: string[]
-): Promise<string[]> {
+): Promise<string> {
   let context = `Business description: ${businessDescription}`;
 
   if (websiteUrl) {
@@ -124,8 +117,8 @@ export async function generatePost(
   const angle = pickAngle(recentPostSummaries?.map(s => s.slice(0, 140)) || []);
 
   let system = systemPrompts[tone];
-  system += `\n\n- Each post must be between ${charMin} and ${charMax} characters. This is a hard limit, not a target. If you are approaching ${charMax} characters, end the post there and continue the idea in the next post instead of cramming it in.`;
-  system += `\n\n- For this post, focus only on this angle: ${angle}. Mention only the part of the business relevant to this angle. Do not restate the full business description or list every feature. A brief, partial reference to what the business does is enough in the final post.`;
+  system += `\n\n- The post must be between ${charMin} and ${charMax} characters. This is a hard limit, not a target.`;
+  system += `\n\n- Focus only on this angle: ${angle}. Mention only the part of the business relevant to this angle. Do not restate the full business description or list every feature. A brief, partial reference to what the business does is enough.`;
 
   if (recentPostSummaries && recentPostSummaries.length > 0) {
     system += `\n\n- Do not repeat these ideas, openings, or angles used in recent posts:\n${recentPostSummaries.map((s) => `- ${s}`).join("\n")}\n- Write about something clearly different from all of the above.`;
@@ -139,14 +132,7 @@ export async function generatePost(
     frequencyPenalty: 0.4,
   });
 
-  const raw = generated.trim();
-  const cleaned = raw.replace(/^---\s*\n?/, "").replace(/\n?\s*---$/, "");
-  const posts = cleaned
-    .split(/\n\s*---\s*\n/)
-    .map((p) => stripLeadingPostLabel(p.trim()))
-    .filter((p) => p.length > 0);
-
-  return posts.length > 0 ? posts : [raw];
+  return stripLeadingPostLabel(generated.trim());
 }
 
 function splitIntoSentences(paragraph: string): string[] {

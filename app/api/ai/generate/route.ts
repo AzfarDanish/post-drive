@@ -38,9 +38,9 @@ export async function POST(req: NextRequest) {
       recentPostSummaries: Array.isArray(recentPostSummaries) ? recentPostSummaries.filter((s): s is string => typeof s === "string" && s.length > 0) : undefined,
     };
 
-    const posts = await generateAndProcessPosts(options);
+    const post = await generateAndProcessPosts(options);
 
-    return NextResponse.json({ posts });
+    return NextResponse.json({ post });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "AI generation failed";
