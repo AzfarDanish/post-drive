@@ -130,6 +130,8 @@ export async function publishAsAccount(
 
     const { id: creation_id } = containerData!;
 
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+
     const publishRes = await fetch(`${base}/${userId}/threads_publish`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
