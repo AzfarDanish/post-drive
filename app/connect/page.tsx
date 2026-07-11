@@ -8,7 +8,6 @@ interface Account {
   id: string;
   threads_user_id: string;
   username?: string | null;
-  is_enabled: boolean;
 }
 
 export default function ConnectPage() {
@@ -35,25 +34,6 @@ export default function ConnectPage() {
     load();
   }, []);
 
-  async function toggleAutoPost(acc: Account) {
-    const next = !acc.is_enabled;
-    setAccounts((prev) =>
-      prev.map((a) => (a.id === acc.id ? { ...a, is_enabled: next } : a))
-    );
-
-    const res = await fetch("/api/threads/account", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: acc.id, is_enabled: next }),
-    });
-
-    if (!res.ok) {
-      setAccounts((prev) =>
-        prev.map((a) => (a.id === acc.id ? { ...a, is_enabled: acc.is_enabled } : a))
-      );
-    }
-  }
-
   if (loading || checking) return null;
 
   return (
@@ -77,19 +57,7 @@ export default function ConnectPage() {
                   <span className="text-[#16a34a] font-medium">Connected</span>{" "}
                   <span className="text-[#6B6459]">— {acc.username || `Threads #${acc.threads_user_id.slice(0, 8)}`}</span>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={acc.is_enabled}
-                    onChange={() => toggleAutoPost(acc)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-[#D8D2C4] rounded-full peer peer-checked:bg-[#3F7857] peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[#3F7857]/30 transition-colors after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
-                </label>
               </div>
-              <p className="text-xs text-[#A39C8C]">
-                Auto-post: {acc.is_enabled ? "On" : "Off"}
-              </p>
             </div>
           ))}
 

@@ -336,14 +336,6 @@ export default function PostPage() {
     setMedia((prev) => prev.filter((_, i) => i !== index));
   }
 
-  const allPostsValid =
-    posts.length > 0 &&
-    charMin < charMax &&
-    posts.every((p) => {
-      const len = p.trim().length;
-      return len >= charMin && len <= charMax;
-    });
-
   useEffect(() => {
     const timers = posts.map((text, i) =>
       setTimeout(async () => {
@@ -604,8 +596,6 @@ export default function PostPage() {
   }, [businessDescription, websiteUrl, tone]);
 
   async function handlePublish() {
-    if (!allPostsValid) return;
-
     setPublishStatus("publishing");
     setPublishMessage("");
 
@@ -924,7 +914,7 @@ export default function PostPage() {
 
             <button
               onClick={handlePublish}
-              disabled={publishStatus === "publishing" || !allPostsValid}
+              disabled={publishStatus === "publishing"}
               className="rounded-xl bg-[#1D1B18] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#2F4468] disabled:bg-[#C9C3B5] disabled:cursor-not-allowed transition-colors w-full"
             >
               {publishStatus === "publishing" ? "Publishing thread..." : "Publish Thread to Threads"}

@@ -1,6 +1,5 @@
 -- =============================================================================
 -- Post Drive — Supabase Schema
--- Auto-posting Threads app.
 -- Apply this whole file to a fresh Supabase project to recreate the schema.
 -- =============================================================================
 
@@ -45,8 +44,6 @@ create table threads_accounts (
     created_at timestamptz default now(),
 
     token_expires_at timestamptz,
-    is_enabled boolean not null default false,
-    last_posted_at timestamptz,
 
     user_id uuid references users(id)
 );
@@ -85,26 +82,10 @@ create table user_preferences (
 create unique index idx_user_preferences_account on user_preferences(threads_account_id);
 
 
--- 4. post_log -----------------------------------------------------------------
--- Every auto-post cron run logs here, whether it published or not.
--- Used for shadow-mode review and debugging.
-
-create table post_log (
-    id uuid primary key default gen_random_uuid(),
-    posts jsonb not null,
-    was_published boolean not null default false,
-    error text,
-    created_at timestamptz not null default now(),
-    threads_account_id uuid references threads_accounts(id) on delete cascade
-);
-
-
--- 5. Row-Level Security -------------------------------------------------------
--- Ensures users can only access their own data.
+-- 4. Row-Level Security -------------------------------------------------------
 
 alter table threads_accounts enable row level security;
 alter table user_preferences enable row level security;
-alter table post_log enable row level security;
 
 create policy "users_own_accounts" on threads_accounts
   for all using (auth.uid() = user_id);
@@ -115,28 +96,3 @@ create policy "users_own_preferences" on user_preferences
       select id from threads_accounts where user_id = auth.uid()
     )
   );
-
-create policy "users_own_post_log" on post_log
-  for all using (
-    threads_account_id in (
-      select id from threads_accounts where user_id = auth.uid()
-    )
-  );
-
-
--- 6. Useful queries -----------------------------------------------------------
-
--- Check auto-post status:
--- SELECT id, threads_user_id, is_enabled, token_expires_at, last_posted_at FROM threads_accounts;
-
--- Review recent auto-post logs:
--- SELECT * FROM post_log ORDER BY created_at DESC LIMIT 20;
-
--- Enable auto-publishing (flip kill switch):
--- UPDATE threads_accounts SET is_enabled = true;
-
--- Disable auto-publishing:
--- UPDATE threads_accounts SET is_enabled = false;
-
--- Set initial token expiry (run once after fresh OAuth connect):
--- UPDATE threads_accounts SET token_expires_at = now() + interval '60 days' WHERE token_expires_at IS NULL;

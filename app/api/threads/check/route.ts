@@ -16,7 +16,7 @@ export async function GET() {
 
   const { data: accounts } = await supabase
     .from("threads_accounts")
-    .select("id, threads_user_id, access_token, is_enabled")
+    .select("id, threads_user_id, access_token")
     .eq("user_id", user.id);
 
   if (!accounts || accounts.length === 0) {
@@ -47,7 +47,6 @@ export async function GET() {
         id: account.id,
         threads_user_id: account.threads_user_id,
         username: meRes.ok ? meData.username || meData.name || null : null,
-        is_enabled: account.is_enabled,
         token_preview: account.access_token.slice(0, 20) + "...",
         me: { ok: meRes.ok, data: meData },
         publishing_limit: { ok: limitRes.ok, data: limitData },
