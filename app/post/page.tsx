@@ -525,7 +525,7 @@ export default function PostPage() {
                 >
                   {activeAccounts.map((acc) => (
                     <option key={acc.id} value={acc.id}>
-                      {acc.username || `Threads #${acc.threads_user_id.slice(0, 8)}`}
+                      {acc.username || "Threads account"}
                     </option>
                   ))}
                 </select>

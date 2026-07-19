@@ -81,7 +81,7 @@ export default function ConnectPage() {
                   </button>
                   <span className="text-sm text-[#1D1B18]">
                     <span className="text-[#16a34a] font-medium">Connected</span>{" "}
-                    <span className="text-[#6B6459]">— {acc.username || `Threads #${acc.threads_user_id.slice(0, 8)}`}</span>
+                    <span className="text-[#6B6459]">— {acc.username || "Threads account"}</span>
                   </span>
                 </div>
                 <button
