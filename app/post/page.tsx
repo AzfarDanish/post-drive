@@ -256,7 +256,7 @@ export default function PostPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fetchedOgUrls = useRef<Set<string>>(new Set());
 
-  const { accounts } = useAccounts();
+  const { activeAccounts } = useAccounts();
   const {
     preferences,
     loading: prefsLoading,
@@ -269,9 +269,21 @@ export default function PostPage() {
     }
   }, [user, authLoading, router]);
 
-  if (accounts.length > 0 && !activeAccountId) {
-    setActiveAccountId(accounts[0].id);
-  }
+  useEffect(() => {
+    if (activeAccounts.length > 0 && !activeAccountId) {
+      setActiveAccountId(activeAccounts[0].id);
+    }
+  }, [activeAccounts, activeAccountId]);
+
+  useEffect(() => {
+    if (
+      activeAccountId &&
+      activeAccounts.length > 0 &&
+      !activeAccounts.find((a) => a.id === activeAccountId)
+    ) {
+      setActiveAccountId(activeAccounts[0].id);
+    }
+  }, [activeAccounts, activeAccountId]);
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -502,7 +514,7 @@ export default function PostPage() {
               onRemoveMedia={removeMedia}
             />
 
-            {accounts.length > 1 && (
+            {activeAccounts.length > 1 && (
               <div className="space-y-1.5">
                 <label className={eyebrowClass}>Publish to</label>
                 <select
@@ -511,7 +523,7 @@ export default function PostPage() {
                   disabled={publishStatus === "publishing"}
                   className="w-full rounded-xl border border-[#E4DFD3] bg-white px-3 py-2 text-sm text-[#1D1B18] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468]"
                 >
-                  {accounts.map((acc) => (
+                  {activeAccounts.map((acc) => (
                     <option key={acc.id} value={acc.id}>
                       {acc.username || `Threads #${acc.threads_user_id.slice(0, 8)}`}
                     </option>

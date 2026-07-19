@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
     shortLivedToken;
 
   const meRes = await fetch(
-    `https://graph.threads.net/v1.0/me?fields=id&access_token=${accessToken}`
+    `https://graph.threads.net/v1.0/me?fields=id,username&access_token=${accessToken}`
   );
 
   const { data: meData } = await safeJson(meRes);
@@ -142,8 +142,9 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const threadsUserId =
-    (meData as Record<string, unknown>)?.id || user_id;
+  const me = meData as Record<string, unknown>;
+  const threadsUserId = me?.id || user_id;
+  const username = (me?.username as string) || null;
 
   const { data: existing } = await admin
     .from("threads_accounts")
@@ -155,7 +156,7 @@ export async function GET(req: NextRequest) {
   if (existing) {
     const { error: updateError } = await admin
       .from("threads_accounts")
-      .update({ access_token: accessToken })
+      .update({ access_token: accessToken, username })
       .eq("id", existing.id);
 
     if (updateError) {
@@ -167,6 +168,7 @@ export async function GET(req: NextRequest) {
       .insert({
         threads_user_id: threadsUserId,
         access_token: accessToken,
+        username,
         user_id: appUser.id,
       });
 
@@ -175,5 +177,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(new URL("/connected", req.url));
+  return NextResponse.redirect(new URL("/post", req.url));
 }

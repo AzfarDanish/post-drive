@@ -41,6 +41,10 @@ create table threads_accounts (
 
     access_token text,
 
+    username text,
+
+    is_active boolean not null default true,
+
     created_at timestamptz default now(),
 
     token_expires_at timestamptz,
