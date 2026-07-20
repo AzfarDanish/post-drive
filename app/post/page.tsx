@@ -8,6 +8,7 @@ import { useAccounts } from "@/hooks/use-accounts";
 import { usePreferences } from "@/hooks/use-preferences";
 import type { Preferences } from "@/hooks/use-preferences";
 import { AiGeneratorPanel, type GenerateParams } from "@/components/ai-generator-panel";
+import type { XThread, XThreadTweet } from "@/lib/threads";
 
 const fraunces = Fraunces({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-display" });
 const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-body" });
@@ -30,6 +31,15 @@ interface OgData {
   siteName: string | null;
 }
 
+const SECTIONS_MAP: Record<string, string> = {
+  hook: "Hook",
+  context: "Context",
+  reveal: "Reveal",
+  proof: "Proof",
+  cta: "CTA",
+  close: "Close",
+};
+
 const postTextareaClass =
   "post-textarea w-full rounded-xl border border-[#E4DFD3] bg-white px-3 py-2.5 text-sm text-[#1D1B18] placeholder:text-[#A39C8C] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468] disabled:bg-[#F1EEE6] transition-colors";
 
@@ -41,6 +51,21 @@ const addMediaLinkClass =
 
 const eyebrowClass =
   "text-xs font-semibold uppercase tracking-wide text-[#57534A] [font-family:var(--font-mono)]";
+
+const sectionBadgeClass =
+  "text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full";
+
+function sectionBadgeColor(section: string) {
+  const colors: Record<string, string> = {
+    hook: "bg-[#FBEAE8] text-[#8A2A22]",
+    context: "bg-[#EDE8DC] text-[#6B6459]",
+    reveal: "bg-[#D8E5F0] text-[#1D2E47]",
+    proof: "bg-[#EDF4EE] text-[#2F6B45]",
+    cta: "bg-[#F5EDD6] text-[#7A5C1A]",
+    close: "bg-[#E8E0F0] text-[#4A2D6B]",
+  };
+  return colors[section] || "bg-[#EDE8DC] text-[#6B6459]";
+}
 
 function charBarColor(count: number, min: number, max: number) {
   if (count < min) return "bg-[#B3261E]";
@@ -232,6 +257,111 @@ const PostComposer = memo(function PostComposer({
   );
 });
 
+const TweetComposer = memo(function TweetComposer({
+  tweet,
+  index,
+  disabled,
+  onChange,
+  onRemove,
+}: {
+  tweet: XThreadTweet;
+  index: number;
+  disabled: boolean;
+  onChange: (index: number, value: string) => void;
+  onRemove?: (index: number) => void;
+}) {
+  const sectionLabel = SECTIONS_MAP[tweet.section] || tweet.section;
+  const charLimit = 280;
+
+  return (
+    <div className="rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] p-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-[#57534A] [font-family:var(--font-mono)]">
+            Tweet {index + 1}
+          </span>
+          <span className={`${sectionBadgeClass} ${sectionBadgeColor(tweet.section)}`}>
+            {sectionLabel}
+          </span>
+        </div>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={() => onRemove(index)}
+            disabled={disabled}
+            className="text-xs text-[#B3261E] hover:text-[#8A2A22] disabled:text-[#C9C3B5] disabled:cursor-not-allowed transition-colors font-medium"
+          >
+            Remove
+          </button>
+        )}
+      </div>
+      <textarea
+        value={tweet.text}
+        onChange={(e) => onChange(index, e.target.value)}
+        onInput={(e) => autoResize(e.currentTarget)}
+        placeholder={`Tweet ${index + 1}...`}
+        rows={2}
+        disabled={disabled}
+        className={postTextareaClass}
+      />
+      <div className="flex items-center justify-end text-xs">
+        <span className={tweet.text.length > charLimit ? "text-[#B3261E] font-medium" : "text-[#6B6459]"}>
+          {tweet.text.length} / {charLimit}
+        </span>
+      </div>
+    </div>
+  );
+});
+
+function ThreadComposer({
+  thread,
+  disabled,
+  onTweetChange,
+  onTweetRemove,
+}: {
+  thread: XThread;
+  disabled: boolean;
+  onTweetChange: (index: number, value: string) => void;
+  onTweetRemove: (index: number) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className={eyebrowClass}>X Thread — {thread.tweets.length} tweets</h2>
+      </div>
+      <div className="space-y-3">
+        {thread.tweets.map((tweet, i) => (
+          <TweetComposer
+            key={i}
+            tweet={tweet}
+            index={i}
+            disabled={disabled}
+            onChange={onTweetChange}
+            onRemove={onTweetRemove}
+          />
+        ))}
+      </div>
+      <div className="rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] px-4 py-3">
+        <div className="flex items-center justify-between text-xs text-[#6B6459]">
+          <span>Copy each tweet individually to post on X</span>
+          <button
+            type="button"
+            onClick={() => {
+              const text = thread.tweets
+                .map((t, i) => `${i + 1}/${thread.tweets.length}\n${t.text}`)
+                .join("\n\n");
+              navigator.clipboard.writeText(text);
+            }}
+            className="text-[#2F4468] hover:text-[#1D2E47] font-medium"
+          >
+            Copy all
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PostPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -249,6 +379,9 @@ export default function PostPage() {
 
   const [ogData, setOgData] = useState<OgData | null>(null);
   const [ogLoading, setOgLoading] = useState(false);
+
+  const [generatedThread, setGeneratedThread] = useState<XThread | null>(null);
+  const [activeFormat, setActiveFormat] = useState<"post" | "thread">("post");
 
   const [diagnostic, setDiagnostic] = useState<Record<string, unknown> | null>(null);
   const [checking, setChecking] = useState(false);
@@ -286,6 +419,7 @@ export default function PostPage() {
   }, [activeAccounts, activeAccountId]);
 
   useEffect(() => {
+    if (activeFormat !== "post") return;
     const timer = setTimeout(async () => {
       const url = extractFirstUrl(post);
 
@@ -316,13 +450,13 @@ export default function PostPage() {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [post]);
+  }, [post, activeFormat]);
 
   useEffect(() => {
     requestAnimationFrame(() => {
       document.querySelectorAll<HTMLTextAreaElement>(".post-textarea").forEach(autoResize);
     });
-  }, [post]);
+  }, [post, generatedThread]);
 
   async function handleSavePrefs(prefs: Partial<Preferences>) {
     if (!activeAccountId) return;
@@ -337,12 +471,15 @@ export default function PostPage() {
   async function handleGenerateAi(params: GenerateParams) {
     setAiStatus("generating");
     setAiError("");
+    setGeneratedThread(null);
+    setActiveFormat(params.format);
 
     try {
       const res = await fetch("/api/ai/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          format: params.format,
           businessDescription: params.businessDescription,
           websiteUrl: params.websiteUrl,
           tone: params.tone,
@@ -357,11 +494,21 @@ export default function PostPage() {
       const data = await res.json();
 
       if (res.ok) {
-        setPost(data.post);
-        setMedia({ status: "none" });
-        setOgData(null);
-        setOgLoading(false);
-        setAiStatus("done");
+        if (params.format === "thread" && data.thread) {
+          setGeneratedThread(data.thread);
+          setMedia({ status: "none" });
+          setOgData(null);
+          setAiStatus("done");
+        } else if (data.post) {
+          setPost(data.post);
+          setMedia({ status: "none" });
+          setOgData(null);
+          setOgLoading(false);
+          setAiStatus("done");
+        } else {
+          setAiError("Unexpected response format");
+          setAiStatus("error");
+        }
       } else {
         setAiError(data.error || "Generation failed");
         setAiStatus("error");
@@ -370,6 +517,19 @@ export default function PostPage() {
       setAiError("Network error. Check that the server is running.");
       setAiStatus("error");
     }
+  }
+
+  function handleTweetChange(index: number, value: string) {
+    if (!generatedThread) return;
+    const tweets = [...generatedThread.tweets];
+    tweets[index] = { ...tweets[index], text: value };
+    setGeneratedThread({ ...generatedThread, tweets });
+  }
+
+  function handleRemoveTweet(index: number) {
+    if (!generatedThread) return;
+    const tweets = generatedThread.tweets.filter((_, i) => i !== index);
+    setGeneratedThread({ ...generatedThread, tweets });
   }
 
   async function handlePublish() {
@@ -409,6 +569,46 @@ export default function PostPage() {
           : JSON.stringify(data.details, null, 2)
         : "";
       setPublishMessage(`${data.error || "Something went wrong"}${details ? `\n${details}` : ""}`);
+    }
+  }
+
+  async function handlePublishThread() {
+    if (!generatedThread || generatedThread.tweets.length === 0) return;
+
+    setPublishStatus("publishing");
+    setPublishMessage("");
+
+    const texts = generatedThread.tweets.map((t) => t.text.trim()).filter(Boolean);
+
+    const res = await fetch("/api/threads/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threads: texts,
+        threads_account_id: activeAccountId,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (res.ok) {
+      setPublishStatus("success");
+      setPublishMessage(`Thread posted! (${data.publishedCount} replies)`);
+      setGeneratedThread(null);
+      setActiveFormat("post");
+    } else {
+      setPublishStatus("error");
+      const published = data.publishedCount ?? 0;
+      const msg =
+        published > 0
+          ? `Posted ${published}/${texts.length}. Failed on reply ${published + 1}: ${data.error}`
+          : data.error || "Something went wrong";
+      const details = data.details
+        ? typeof data.details === "string"
+          ? data.details
+          : JSON.stringify(data.details, null, 2)
+        : "";
+      setPublishMessage(`${msg}${details ? `\n${details}` : ""}`);
     }
   }
 
@@ -477,7 +677,7 @@ export default function PostPage() {
             Composer
           </p>
           <h1 className="text-3xl font-semibold text-[#1D1B18] [font-family:var(--font-display)]">
-            Post to Threads
+            {activeFormat === "thread" ? "Generate X Thread" : "Post to Threads"}
           </h1>
         </header>
 
@@ -495,61 +695,114 @@ export default function PostPage() {
           />
 
           <section className="lg:col-span-3 rounded-2xl border border-[#E4DFD3] bg-white shadow-sm p-6 space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className={eyebrowClass}>Composer</h2>
-            </div>
-
-            <PostComposer
-              label="Post"
-              post={post}
-              media={media}
-              charMin={preferences?.char_min ?? 240}
-              charMax={preferences?.char_max ?? 480}
-              og={ogData}
-              loadingOg={ogLoading}
-              disabled={publishStatus === "publishing"}
-              fileInputRef={fileInputRef}
-              onChange={setPost}
-              onFileSelect={handleFileSelect}
-              onRemoveMedia={removeMedia}
-            />
-
-            {activeAccounts.length > 1 && (
-              <div className="space-y-1.5">
-                <label className={eyebrowClass}>Publish to</label>
-                <select
-                  value={activeAccountId ?? ""}
-                  onChange={(e) => setActiveAccountId(e.target.value)}
+            {activeFormat === "thread" && generatedThread ? (
+              <>
+                <ThreadComposer
+                  thread={generatedThread}
                   disabled={publishStatus === "publishing"}
-                  className="w-full rounded-xl border border-[#E4DFD3] bg-white px-3 py-2 text-sm text-[#1D1B18] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468]"
+                  onTweetChange={handleTweetChange}
+                  onTweetRemove={handleRemoveTweet}
+                />
+
+                {activeAccounts.length > 1 && (
+                  <div className="space-y-1.5">
+                    <label className={eyebrowClass}>Publish to</label>
+                    <select
+                      value={activeAccountId ?? ""}
+                      onChange={(e) => setActiveAccountId(e.target.value)}
+                      disabled={publishStatus === "publishing"}
+                      className="w-full rounded-xl border border-[#E4DFD3] bg-white px-3 py-2 text-sm text-[#1D1B18] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468]"
+                    >
+                      {activeAccounts.map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.username || "Threads account"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <button
+                  onClick={handlePublishThread}
+                  disabled={publishStatus === "publishing"}
+                  className="rounded-xl bg-[#1D1B18] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#2F4468] disabled:bg-[#C9C3B5] disabled:cursor-not-allowed transition-colors w-full"
                 >
-                  {activeAccounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.username || "Threads account"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+                  {publishStatus === "publishing"
+                    ? "Publishing thread..."
+                    : "Publish thread to Threads"}
+                </button>
 
-            <button
-              onClick={handlePublish}
-              disabled={publishStatus === "publishing"}
-              className="rounded-xl bg-[#1D1B18] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#2F4468] disabled:bg-[#C9C3B5] disabled:cursor-not-allowed transition-colors w-full"
-            >
-              {publishStatus === "publishing" ? "Publishing..." : "Publish to Threads"}
-            </button>
+                {publishStatus === "success" && (
+                  <div className="rounded-xl bg-[#EDF4EE] border border-[#BFE0C4] px-4 py-3 text-sm text-[#2F6B45]">
+                    {publishMessage}
+                  </div>
+                )}
 
-            {publishStatus === "success" && (
-              <div className="rounded-xl bg-[#EDF4EE] border border-[#BFE0C4] px-4 py-3 text-sm text-[#2F6B45]">
-                {publishMessage}
-              </div>
-            )}
+                {publishStatus === "error" && (
+                  <div className="rounded-xl bg-[#FBEAE8] border border-[#F0C4BF] px-4 py-3 text-sm text-[#8A2A22] whitespace-pre-wrap">
+                    {publishMessage}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className={eyebrowClass}>Composer</h2>
+                </div>
 
-            {publishStatus === "error" && (
-              <div className="rounded-xl bg-[#FBEAE8] border border-[#F0C4BF] px-4 py-3 text-sm text-[#8A2A22] whitespace-pre-wrap">
-                {publishMessage}
-              </div>
+                <PostComposer
+                  label="Post"
+                  post={post}
+                  media={media}
+                  charMin={preferences?.char_min ?? 240}
+                  charMax={preferences?.char_max ?? 480}
+                  og={ogData}
+                  loadingOg={ogLoading}
+                  disabled={publishStatus === "publishing"}
+                  fileInputRef={fileInputRef}
+                  onChange={setPost}
+                  onFileSelect={handleFileSelect}
+                  onRemoveMedia={removeMedia}
+                />
+
+                {activeAccounts.length > 1 && (
+                  <div className="space-y-1.5">
+                    <label className={eyebrowClass}>Publish to</label>
+                    <select
+                      value={activeAccountId ?? ""}
+                      onChange={(e) => setActiveAccountId(e.target.value)}
+                      disabled={publishStatus === "publishing"}
+                      className="w-full rounded-xl border border-[#E4DFD3] bg-white px-3 py-2 text-sm text-[#1D1B18] focus:outline-none focus:ring-2 focus:ring-[#2F4468]/25 focus:border-[#2F4468]"
+                    >
+                      {activeAccounts.map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.username || "Threads account"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <button
+                  onClick={handlePublish}
+                  disabled={publishStatus === "publishing"}
+                  className="rounded-xl bg-[#1D1B18] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#2F4468] disabled:bg-[#C9C3B5] disabled:cursor-not-allowed transition-colors w-full"
+                >
+                  {publishStatus === "publishing" ? "Publishing..." : "Publish to Threads"}
+                </button>
+
+                {publishStatus === "success" && (
+                  <div className="rounded-xl bg-[#EDF4EE] border border-[#BFE0C4] px-4 py-3 text-sm text-[#2F6B45]">
+                    {publishMessage}
+                  </div>
+                )}
+
+                {publishStatus === "error" && (
+                  <div className="rounded-xl bg-[#FBEAE8] border border-[#F0C4BF] px-4 py-3 text-sm text-[#8A2A22] whitespace-pre-wrap">
+                    {publishMessage}
+                  </div>
+                )}
+              </>
             )}
           </section>
         </div>
