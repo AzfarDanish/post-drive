@@ -4,12 +4,21 @@ import { useState, useRef, type KeyboardEvent } from "react";
 import type { Preferences } from "@/hooks/use-preferences";
 
 type Tone = "rage-bait" | "hot-take" | "storytelling" | "educational";
+type XTone = "authority" | "storyteller" | "contrarian" | "educator";
+type Format = "post" | "thread";
 
 const TONES: { id: Tone; label: string }[] = [
   { id: "rage-bait", label: "Rage Bait" },
   { id: "hot-take", label: "Hot Take" },
   { id: "storytelling", label: "Storytelling" },
   { id: "educational", label: "Educational" },
+];
+
+const X_TONES: { id: XTone; label: string }[] = [
+  { id: "authority", label: "Authority" },
+  { id: "storyteller", label: "Storyteller" },
+  { id: "contrarian", label: "Contrarian" },
+  { id: "educator", label: "Educator" },
 ];
 
 const SLIDER_MIN = 30;
@@ -36,9 +45,10 @@ interface AiGeneratorPanelProps {
 }
 
 export interface GenerateParams {
+  format: Format;
   businessDescription: string;
   websiteUrl?: string;
-  tone: Tone;
+  tone: Tone | XTone;
   charMin: number;
   charMax: number;
   targetAudience?: string;
@@ -70,8 +80,9 @@ export function AiGeneratorPanel({
   const [websiteUrl, setWebsiteUrl] = useState(
     preferences?.website_url ?? ""
   );
-  const [tone, setTone] = useState<Tone>(
-    (preferences?.default_tone as Tone) ?? "rage-bait"
+  const [format, setFormat] = useState<Format>("post");
+  const [tone, setTone] = useState<string>(
+    (preferences?.default_tone as string) ?? "rage-bait"
   );
   const [charMin, setCharMin] = useState(preferences?.char_min ?? 240);
   const [charMax, setCharMax] = useState(preferences?.char_max ?? 480);
@@ -87,7 +98,7 @@ export function AiGeneratorPanel({
     setMainProblem(preferences?.main_problem ?? "");
     setKeyFeatures(preferences?.key_features ?? "");
     setWebsiteUrl(preferences?.website_url ?? "");
-    setTone((preferences?.default_tone as Tone) ?? "rage-bait");
+    setTone((preferences?.default_tone as string) ?? "rage-bait");
     setCharMin(preferences?.char_min ?? 240);
     setCharMax(preferences?.char_max ?? 480);
   }
@@ -103,7 +114,7 @@ export function AiGeneratorPanel({
     setSaveStatus("saving");
     try {
       await onSavePrefs({
-        default_tone: tone,
+        default_tone: tone as Tone,
         business_description: businessDescription.trim(),
         website_url: websiteUrl.trim(),
         char_min: charMin,
@@ -121,9 +132,10 @@ export function AiGeneratorPanel({
   async function handleGenerate() {
     if (!businessDescription.trim()) return;
     await onGenerate({
+      format,
       businessDescription: businessDescription.trim(),
       websiteUrl: websiteUrl.trim() || undefined,
-      tone,
+      tone: tone as Tone | XTone,
       charMin,
       charMax,
       targetAudience: targetAudience.trim() || undefined,
@@ -153,6 +165,47 @@ export function AiGeneratorPanel({
         {prefsValidating && !prefsLoading && (
           <span className="text-xs text-[#A39C8C]">Refreshing...</span>
         )}
+      </div>
+
+      {/* Format toggle */}
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-[#1D1B18]">Format</label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setFormat("post");
+              if (tone in (X_TONES.map(t => t.id) as string[])) {
+                setTone("rage-bait");
+              }
+            }}
+            disabled={aiStatus === "generating"}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium border transition-colors ${
+              format === "post"
+                ? "bg-[#2F4468] text-white border-[#2F4468]"
+                : "bg-white text-[#57534A] border-[#E4DFD3] hover:border-[#2F4468] hover:text-[#2F4468]"
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            Single Post
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFormat("thread");
+              if (tone in (TONES.map(t => t.id) as string[])) {
+                setTone("authority");
+              }
+            }}
+            disabled={aiStatus === "generating"}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium border transition-colors ${
+              format === "thread"
+                ? "bg-[#2F4468] text-white border-[#2F4468]"
+                : "bg-white text-[#57534A] border-[#E4DFD3] hover:border-[#2F4468] hover:text-[#2F4468]"
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            X Thread
+          </button>
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -230,10 +283,11 @@ export function AiGeneratorPanel({
         />
       </div>
 
+      {/* Tone selector — switches based on format */}
       <div className="space-y-2">
         <label className="text-sm font-medium text-[#1D1B18]">Tone</label>
         <div className="flex flex-wrap gap-2">
-          {TONES.map((t) => (
+          {(format === "thread" ? X_TONES : TONES).map((t) => (
             <button
               key={t.id}
               type="button"
@@ -251,39 +305,54 @@ export function AiGeneratorPanel({
         </div>
       </div>
 
-      <div className="space-y-4">
-        <div>
-          <label className="text-sm font-medium text-[#1D1B18]">
-            Min characters: {charMin}
-          </label>
-          <input
-            type="range"
-            min={SLIDER_MIN}
-            max={charMax - 10}
-            step={10}
-            value={charMin}
-            onChange={(e) => setCharMin(Number(e.target.value))}
-            disabled={aiStatus === "generating"}
-            className="w-full accent-[#2F4468]"
-          />
-        </div>
+      {/* Character limit sliders — only for single post mode */}
+      {format === "post" && (
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-[#1D1B18]">
+              Min characters: {charMin}
+            </label>
+            <input
+              type="range"
+              min={SLIDER_MIN}
+              max={charMax - 10}
+              step={10}
+              value={charMin}
+              onChange={(e) => setCharMin(Number(e.target.value))}
+              disabled={aiStatus === "generating"}
+              className="w-full accent-[#2F4468]"
+            />
+          </div>
 
-        <div>
-          <label className="text-sm font-medium text-[#1D1B18]">
-            Max characters: {charMax}
-          </label>
-          <input
-            type="range"
-            min={charMin + 10}
-            max={SLIDER_MAX}
-            step={10}
-            value={charMax}
-            onChange={(e) => setCharMax(Number(e.target.value))}
-            disabled={aiStatus === "generating"}
-            className="w-full accent-[#2F4468]"
-          />
+          <div>
+            <label className="text-sm font-medium text-[#1D1B18]">
+              Max characters: {charMax}
+            </label>
+            <input
+              type="range"
+              min={charMin + 10}
+              max={SLIDER_MAX}
+              step={10}
+              value={charMax}
+              onChange={(e) => setCharMax(Number(e.target.value))}
+              disabled={aiStatus === "generating"}
+              className="w-full accent-[#2F4468]"
+            />
+          </div>
         </div>
-      </div>
+      )}
+
+      {format === "thread" && (
+        <div className="rounded-xl border border-[#E4DFD3] bg-[#FDFCF9] px-4 py-3 text-xs text-[#6B6459] space-y-1 leading-relaxed">
+          <p className="font-medium text-[#57534A]">Thread structure:</p>
+          <p>1. Hook — stop the scroll</p>
+          <p>2-3. Context — make them feel the problem</p>
+          <p>4-6. Reveal — introduce your solution</p>
+          <p>7-9. Proof — build trust with specifics</p>
+          <p>10. CTA — drive replies</p>
+          <p>11-12. Close — summary with link</p>
+        </div>
+      )}
 
       <div className="flex items-center gap-2">
         <button
@@ -326,6 +395,8 @@ export function AiGeneratorPanel({
               </svg>
               Generating...
             </span>
+          ) : format === "thread" ? (
+            "Generate X Thread"
           ) : (
             "Generate with AI"
           )}
@@ -347,7 +418,7 @@ export function AiGeneratorPanel({
           >
             <circle cx="12" cy="12" r="10" />
           </svg>
-          Generating posts...
+          {format === "thread" ? "Generating X thread..." : "Generating posts..."}
         </p>
       )}
 
