@@ -32,14 +32,14 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>
-          <nav className="flex items-center gap-6 px-6 py-3 border-b border-gray-200 text-sm font-medium">
-            <Link href="/" className="text-gray-900 hover:text-gray-600 transition-colors">
-              Home
+          <nav className="sticky top-0 z-50 flex items-center gap-6 px-6 py-3 border-b border-[#E4DFD3] bg-[#FAF8F2]/90 backdrop-blur-md text-sm font-medium">
+            <Link href="/" className="text-[#1D1B18] font-semibold tracking-tight mr-4">
+              Post Drive
             </Link>
-            <Link href="/connect" className="text-gray-900 hover:text-gray-600 transition-colors">
+            <Link href="/connect" className="text-[#6B6459] hover:text-[#1D1B18] transition-colors">
               Connect
             </Link>
-            <Link href="/post" className="text-gray-900 hover:text-gray-600 transition-colors">
+            <Link href="/post" className="text-[#6B6459] hover:text-[#1D1B18] transition-colors">
               Post
             </Link>
             <NavAccountStatus />
